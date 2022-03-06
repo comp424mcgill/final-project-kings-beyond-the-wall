@@ -1,13 +1,22 @@
 import math
 
 class MCTS:
-    def __init__(self):
+
+    # constants
+    BOARD_STATUS_IN_PROGRESS = 0
+    BOARD_STATUS_P0_WIN = 1
+    BOARD_STATUS_P1_WIN = 2
+    BOARD_STATUS_TIE = 3
+    C = math.sqrt(2)
+
+    def __init__(self, world):
+        self.world = world
         pass
 
     # Call mcts search from current game state.
     # Keep track of time with a while loop to set an upper bound on the 
     # simulation execution time.
-    def find_next_move(self, board, my_pos, adv_pos, max_step):
+    def find_next_move(self):
         # TODO
         # while time < 30 sec....
         # select best node
@@ -22,6 +31,14 @@ class MCTS:
     def find_node_best_uct(node):
         #TODO
         return
+
+    # Upper confidence bound function
+    # wi: number of wins after the ith move
+    # ni: number of simulations after the ith move
+    # t: total number of simulations for the parent node
+    # c: exploration parameter
+    def uct_value(wi, ni, t,c=C):
+        return wi/ni + c*math.sqrt(math.log(t)/ni)
 
     # Expand a node by finding all its possible states.
     def expand_node(node):
@@ -38,6 +55,11 @@ class MCTS:
         # TODO
         return
 
+    # return the current board status
+    def board_status(self):
+        #TODO
+        return
+
 
 class Node:
     def __init__(self, state, parent=None):
@@ -50,12 +72,12 @@ class Tree:
         self.root = Node(state)
 
 class State:
-    def __init__(self, board, my_pos, adv_pos, max_step, playerNo):
+    def __init__(self, board, p0_pos, p1_pos, max_step, turn):
         self.chess_board = board.copy()
-        self.my_pos = my_pos
-        self.adv_pos = adv_pos
+        self.p0_pos = p0_pos
+        self.p1_pos = p1_pos
         self.max_step = max_step
-        self.playerNo = playerNo # agent is player 1, opponent is player 2
+        self.turn = turn # player number 0 or 1
 
         # number of visits
         self.visit_count
@@ -66,7 +88,8 @@ class State:
         self.moves = self.all_possible_moves()
 
     def toggle_player(self):
-        self.playerNo = 3 - self.playerNo
+        # toggle between 0 ans 1
+        self.turn = (self.turn + 1) % 2
 
     def copy():
         #TODO state copy
@@ -97,25 +120,9 @@ class State:
         pass
 
 
-# ---------------------- Utils ----------------------
 
 
-# Upper confidence bound function
-# wi: number of wins after the ith move
-# ni: number of simulations after the ith move
-# t: total number of simulations for the parent node
-# c: exploration parameter
-C = math.sqrt(2)
-
-def uct_value(wi, ni, t,c=C):
-    return wi/ni + c*math.sqrt(math.log(t)/ni)
 
 
-BOARD_STATUS_IN_PROGRESS = 0
-BOARD_STATUS_P1_WIN = 1
-BOARD_STATUS_P2_WIN = 2
-BOARD_STATUS_TIE = 3
-# return the current board status
-def board_status(board, my_pos, adv_pos):
-    #TODO
-    return
+
+
