@@ -60,15 +60,6 @@ class StudentAgent(Agent):
         # select best node
         return
 
-        # Select most promising node 
-    def select_promising_node(node):
-        # TODO
-        return
-    
-    # Select child node with best uct value
-    def find_node_best_uct(node):
-        #TODO
-        return
 
     # Upper confidence bound function
     # wi: number of wins after the ith move
@@ -78,17 +69,6 @@ class StudentAgent(Agent):
     def uct_value(wi, ni, t,c=C):
         return wi/ni + c*math.sqrt(math.log(t)/ni)
 
-
-
-    # Simulate random playouts from a node and return the board status
-    def simulate_random_playout(node):
-        # TODO
-        return
-
-    # Backpropagate simulation results
-    def back_propagation(node, playerNo):
-        # TODO
-        return
 
     def board_status(state):
         """
@@ -125,6 +105,27 @@ class Node:
         states = self.state.all_possible_states()
         for s in states:
             self.children.append(Node(s, parent=self))
+
+    # Select most promising node 
+    def select_promising_node(self):
+        # TODO
+        return
+    
+    # Select child node with best uct value
+    def find_node_best_uct(self):
+        #TODO
+        return
+
+
+    # Simulate random playouts from a node and return the board status
+    def simulate_random_playout(self):
+        # TODO
+        return
+
+    # Backpropagate simulation results
+    def back_propagation(self, playerNo):
+        # TODO
+        return
 
 class Tree:
     def __init__(self, state):
