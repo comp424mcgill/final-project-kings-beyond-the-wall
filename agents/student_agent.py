@@ -1,10 +1,20 @@
 # Student agent: Add your own agent here
 from agents.agent import Agent
 from store import register_agent
+from copy import deepcopy
 import sys
 import math
 import numpy as np
 
+dir_map = {
+    "u": 0,
+    "r": 1,
+    "d": 2,
+    "l": 3,
+}
+
+# Moves (Up, Right, Down, Left)
+moves = ((-1, 0), (0, 1), (1, 0), (0, -1))
 
 @register_agent("student_agent")
 class StudentAgent(Agent):
@@ -16,12 +26,9 @@ class StudentAgent(Agent):
     def __init__(self):
         super(StudentAgent, self).__init__()
         self.name = "StudentAgent"
-        self.dir_map = {
-            "u": 0,
-            "r": 1,
-            "d": 2,
-            "l": 3,
-        }
+
+
+
 
     def step(self, chess_board, my_pos, adv_pos, max_step):
         """
@@ -42,6 +49,8 @@ class StudentAgent(Agent):
         return my_pos, self.dir_map["u"]
 
     
+    # ------------------------- MCTS -------------------------
+
     # Call mcts search from current game state.
     # Keep track of time with a while loop to set an upper bound on the 
     # simulation execution time.
@@ -84,8 +93,14 @@ class StudentAgent(Agent):
         # TODO
         return
 
-    # return the current board status
-    def board_status(self):
+    def board_status(state):
+        """
+        Return the current board status.
+        
+        Parameters
+        ----------
+        state: the game state
+        """
         #TODO
         return
 
@@ -107,50 +122,158 @@ class Tree:
         self.root = Node(state)
 
 class State:
-    def __init__(self, chess_board, p0_pos, p1_pos, turn):
+    def __init__(self, chess_board, p0_pos, p1_pos, turn, max_step):
         self.chess_board = chess_board.copy()
         self.p0_pos = p0_pos
         self.p1_pos = p1_pos
         self.turn = turn # player number 0 or 1
+        self.max_step = max_step
 
     def toggle_player(self):
-        # toggle between 0 ans 1
+        """
+        Toggle player turn.
+        """
         self.turn = (self.turn + 1) % 2
 
-    def copy(self):
-        state_copy = State(self.chess_board, self.p0_pos, self.p1_pos, self.turn)
-        return state_copy
+    def set_barrier(self, pos, barrier_dir):
+        """
+        Set barrier on chessboard.
+        
+        Parameters
+        ----------
+        pos: tuple
+        barrier_dir: int
+        """
+        self.chess_board[pos[0], pos[1],barrier_dir] = 1
 
-    # Build a list of all possible states from current state.
-    # A move is represented as a tuple (x,y,dir) where x is the final
-    # position in x, y is the final position on y axis and dir is the
-    # barrier direction: 'u','d','l','r'.    def all_possible_states(self):
     def all_possible_states(self):
+        """
+        Get all possible states from current game state. (reachable and within max steps).
+        """
         states = list()
 
-        # current player and opponent positions
-        if self.turn == 0:
-            start_pos = self.p0_pos
-            adv_pos = self.p1_pos
+        # Get current player start position
+        start_pos = self.p0_pos if self.turn == 0 else self.p1_pos
+
+        # Get position of the adversary
+        adv_pos = self.p0_pos if self.turn == 1 else self.p1_pos
+
+        # BFS
+        state_queue = [(start_pos, 0)]
+        visited = {tuple(start_pos)}
+        is_reached = False
+        while state_queue and not is_reached:
+            cur_pos, cur_step = state_queue.pop(0)
+            r, c = cur_pos
+            if cur_step == self.max_step:
+                break
+            for dir, move in enumerate(moves):
+
+                # look for barrier
+                if self.chess_board[r, c, dir]:
+                    continue
+
+                next_pos = cur_pos + move
+
+                # look for adversary or already visited
+                if np.array_equal(next_pos, adv_pos) or tuple(next_pos) in visited:
+                    continue
+                
+                # Endpoint already has barrier or is boarder
+                r, c = next_pos
+
+                for barrier_dir in dir_map.values():
+                    if self.chess_board[r, c, barrier_dir]:
+                        continue
+
+                    # Append new state
+                    new_state = deepcopy(self)
+                    # Toggle turn
+                    new_state.toggle_player()
+                    # Move player
+                    if self.turn == 0:
+                        new_state.p0_pos = next_pos
+                    else:
+                        new_state.p1_pos = next_pos
+                    # Add barrier
+                    new_state.set_barrier(next_pos, barrier_dir)
+                    states.append(new_state)
+
+                visited.add(tuple(next_pos))
+                state_queue.append((next_pos, cur_step + 1))
+
+    def check_endgame(self):
+        """
+        Check if the game ends and compute the current score of the agents.
+
+        Returns
+        -------
+        is_endgame : bool
+            Whether the game ends.
+        player_1_score : int
+            The score of player 1.
+        player_2_score : int
+            The score of player 2.
+        """
+        board_size = self.chess_board.shape[0]
+        # Union-Find
+        father = dict()
+        for r in range(board_size):
+            for c in range(board_size):
+                father[(r, c)] = (r, c)
+
+        def find(pos):
+            if father[pos] != pos:
+                father[pos] = find(father[pos])
+            return father[pos]
+
+        def union(pos1, pos2):
+            father[pos1] = pos2
+
+        for r in range(board_size):
+            for c in range(board_size):
+                for dir, move in enumerate(
+                    self.moves[1:3]
+                ):  # Only check down and right
+                    if self.chess_board[r, c, dir + 1]:
+                        continue
+                    pos_a = find((r, c))
+                    pos_b = find((r + move[0], c + move[1]))
+                    if pos_a != pos_b:
+                        union(pos_a, pos_b)
+
+        for r in range(board_size):
+            for c in range(board_size):
+                find((r, c))
+        p0_r = find(tuple(self.p0_pos))
+        p1_r = find(tuple(self.p1_pos))
+        p0_score = list(father.values()).count(p0_r)
+        p1_score = list(father.values()).count(p1_r)
+        if p0_r == p1_r:
+            return False, p0_score, p1_score
+        player_win = None
+        win_blocks = -1
+        if p0_score > p1_score:
+            player_win = 0
+            win_blocks = p0_score
+        elif p0_score < p1_score:
+            player_win = 1
+            win_blocks = p1_score
         else:
-            start_pos = self.p1_pos
-            adv_pos = self.p0_pos 
+            player_win = -1  # Tie
+        # if player_win >= 0:
+        #     logging.info(
+        #         f"Game ends! Player {self.player_names[player_win]} wins having control over {win_blocks} blocks!"
+        #     )
+        # else:
+        #     logging.info("Game ends! It is a Tie!")
+        return True, p0_score, p1_score
 
-        my_pos = self.p0_pos if self.turn == 0 else self.p1_pos
-        for i in range(self.world.max_step+1):
-
-            for move in self.world.moves:
-                end_pos = (start_pos[0] + move[0], start_pos[1] + move[1])
-
-
-
-            
-
-        return states
-
-    # Play a random move among list of possible moves on the board.
-    # Update state accordingly.
     def random_play(self):
+        """
+        Play a random move among list of possible moves on the board.
+        Update state accordingly.
+        """
         # TODO
         pass
 
