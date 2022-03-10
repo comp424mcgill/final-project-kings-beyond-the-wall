@@ -16,6 +16,8 @@ dir_map = {
 # Moves (Up, Right, Down, Left)
 moves = ((-1, 0), (0, 1), (1, 0), (0, -1))
 
+C = math.sqrt(2)
+
 @register_agent("student_agent")
 class StudentAgent(Agent):
     """
@@ -26,8 +28,6 @@ class StudentAgent(Agent):
     def __init__(self):
         super(StudentAgent, self).__init__()
         self.name = "StudentAgent"
-
-
 
 
     def step(self, chess_board, my_pos, adv_pos, max_step):
@@ -78,10 +78,7 @@ class StudentAgent(Agent):
     def uct_value(wi, ni, t,c=C):
         return wi/ni + c*math.sqrt(math.log(t)/ni)
 
-    # Expand a node by finding all its possible states.
-    def expand_node(node):
-        # TODO
-        return
+
 
     # Simulate random playouts from a node and return the board status
     def simulate_random_playout(node):
@@ -116,6 +113,18 @@ class Node:
 
         # number of wins
         self.win_score = 0
+
+    def expand(self):
+        """
+        Expand the node by finding all its possible states.
+        
+        Parameters
+        ----------
+        node: the node to expand
+        """
+        states = self.state.all_possible_states()
+        for s in states:
+            self.children.append(Node(s, parent=self))
 
 class Tree:
     def __init__(self, state):
@@ -161,8 +170,7 @@ class State:
         # BFS
         state_queue = [(start_pos, 0)]
         visited = {tuple(start_pos)}
-        is_reached = False
-        while state_queue and not is_reached:
+        while state_queue:
             cur_pos, cur_step = state_queue.pop(0)
             r, c = cur_pos
             if cur_step == self.max_step:
@@ -210,10 +218,10 @@ class State:
         -------
         is_endgame : bool
             Whether the game ends.
+        player_0_score : int
+            The score of player 0.
         player_1_score : int
             The score of player 1.
-        player_2_score : int
-            The score of player 2.
         """
         board_size = self.chess_board.shape[0]
         # Union-Find
@@ -261,12 +269,6 @@ class State:
             win_blocks = p1_score
         else:
             player_win = -1  # Tie
-        # if player_win >= 0:
-        #     logging.info(
-        #         f"Game ends! Player {self.player_names[player_win]} wins having control over {win_blocks} blocks!"
-        #     )
-        # else:
-        #     logging.info("Game ends! It is a Tie!")
         return True, p0_score, p1_score
 
     def random_play(self):
