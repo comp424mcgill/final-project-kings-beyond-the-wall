@@ -5,6 +5,8 @@ from copy import deepcopy
 import sys
 import math
 import numpy as np
+import time
+import random
 
 dir_map = {
     "u": 0,
@@ -54,11 +56,30 @@ class StudentAgent(Agent):
     # Call mcts search from current game state.
     # Keep track of time with a while loop to set an upper bound on the 
     # simulation execution time.
-    def find_next_move(self):
+    def find_next_move(self, chess_board, state, turn):
         # TODO
-        # while time < 30 sec....
-        # select best node
-        return
+        tree = Tree(state)
+        root_node = tree.root
+        root_node.state.chess_board = chess_board
+        root_node.state.turn = turn
+        start_time = time.time()
+
+        while (time.time() - start_time < 30) {
+            promising_node = select_promising_node(root_node);
+            if (promising_node.state.chess_board.board_status == Board.IN_PROGRESS) { #update the rhs
+                expand(promising_node);
+            }
+            new_node = promising_node;
+            if (len(promising_node.children) > 0) {
+                new_node = promising_node.get_random_child_node();
+            }
+            playout_result = random_play(new_node);
+            back_propagation(new_node, playout_result);
+        }
+
+        winner_node = root_node.get_child_with_max_score()
+        tree.root_node = winner_node
+        return winner_node.state.chess_board
 
 
     # Upper confidence bound function
@@ -79,6 +100,7 @@ class StudentAgent(Agent):
         state: the game state
         """
         #TODO
+        #should we evaluate whether the game is lost or won?
         return
 
 
@@ -94,7 +116,7 @@ class Node:
         # number of wins
         self.win_score = 0
 
-    def expand(self):
+    def expand(self): #idk if this should be a method in the agent and we pass it a node?
         """
         Expand the node by finding all its possible states.
         
@@ -107,37 +129,76 @@ class Node:
             self.children.append(Node(s, parent=self))
 
     # Select most promising node 
-    def select_promising_node(self):
-        # TODO
-        return
+    def select_promising_node(self): #should this be in the agent as well? passing root node
+        while (len(self.children != 0)):
+            return find_node_best_uct()
     
     # Select child node with best uct value
-    def find_node_best_uct(self):
+    def find_node_best_uct(self): #should this be static and passing a node
         #TODO
-        return
-
+        parent_visit = self.state.visit_count
+        children_length = len(self.children)
+        children = self.children
+        uct_values = []
+        for i in range(children_length):
+            uct_values.append(uct_value(parent_visit, children[i].state.win_score, children[i].state.visit_count))
+        max_uct_value_index = np.argmax(uct_values)
+        return children[i]
 
     # Simulate random playouts from a node and return the board status
     def simulate_random_playout(self):
         # TODO
-        return
+        temp_node = Node(node)
+        temp_state = temp_node.state
+        board_status = board_status(temp_state.chess_board)
+        if (board_status == opponent) {
+            temp_node.parent.state.win_score = float('-inf')
+            return board_status;
+        }
+        while (board_status == Board.IN_PROGRESS) {
+            temp_state.toggle_player();
+            temp_state.random_play();
+            board_status = board_status(temp_state.chess_board)
+        }
+        return board_status
 
     # Backpropagate simulation results
-    def back_propagation(self, playerNo):
+    def back_propagation(self, turn):
         # TODO
-        return
+        temp_node = node_to_explore
+        while (temp_node != null):
+            temp_node.state.increment_visit()
+            if (temp_node.state.turn == turn):
+                temp_node.state.add_score(WIN_SCORE) #ig win score = 1 here?
+        temp_node = temp_node.parent
+
+    # Get the child node with the highest score which corresponds to the child with highest visit count
+    def get_child_with_max_score():
+        children_visit_count = list()
+        length = len(self.children)
+        for i in range(length)
+            children_visit_count.append(self.children[i].state.visit_count)
+        return max(children_visit_count)
+
+    # Get a random node from the list of possible moves
+    def get_random_child_node():
+        int moves = len(self.children)-1
+        int random_index = random.randint(0,moves)
+        return self.children[random_index]
 
 class Tree:
     def __init__(self, state):
         self.root = Node(state)
 
 class State:
-    def __init__(self, chess_board, p0_pos, p1_pos, turn, max_step):
+    def __init__(self, chess_board, p0_pos, p1_pos, turn, max_step, visit_count, win_score):
         self.chess_board = chess_board.copy()
         self.p0_pos = p0_pos
         self.p1_pos = p1_pos
         self.turn = turn # player number 0 or 1
         self.max_step = max_step
+        self.visit_count = visit_count
+        self.win_score = win_score
 
     def toggle_player(self):
         """
@@ -279,6 +340,13 @@ class State:
         """
         # TODO
         pass
+    
+    def increment_visit():
+        self.visit_count++
+
+    def add_score(score)
+        if (self.win_score != Integer.MIN_VALUE): #change for actual default we set
+            this.win_score += score;
 
 
 
