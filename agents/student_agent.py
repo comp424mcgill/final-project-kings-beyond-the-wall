@@ -7,6 +7,7 @@ import math
 import numpy as np
 import time
 import random
+import sys
 
 DIR_MAP = {
     "u": 0,
@@ -38,7 +39,7 @@ class StudentAgent(Agent):
     """
 
     def __init__(self):
-        super(StudentAgent, self).__init__()
+        # super(StudentAgent, self).__init__()
         self.name = "StudentAgent"
 
 
@@ -64,7 +65,9 @@ class StudentAgent(Agent):
 
         cur_state = State(chess_board, p0_pos, p1_pos, turn) # initial state
 
-        return self.find_next_move(cur_state)
+        next_move = self.find_next_move(cur_state)
+        print(next_move)
+        return next_move
 
     
     # ------------------------- MCTS -------------------------
@@ -92,7 +95,7 @@ class StudentAgent(Agent):
 
             promising_node = root_node.select_promising_node() # select promising child node based on UCT
 
-            if (promising_node.state.check_board_status() != IN_PROGRESS):
+            if (promising_node.state.check_board_status() == IN_PROGRESS):
                 promising_node.expand_node() # create child node for selected promising node
             
             node_to_explore = promising_node
@@ -105,29 +108,29 @@ class StudentAgent(Agent):
         
         winner_node = root_node.get_child_with_max_score()
 
-        diff = np.where(winner_node.state.chess_board - root_node.state.chessboard)
+        diff = np.where(winner_node.state.chess_board - root_node.state.chess_board)
         
         next_move = diff[0][0], diff[1][0]
         dir = diff[2][0]
 
         return next_move, dir
 
-    def uct_value(wi, ni, t,c=C):
-        '''
-        Upper confidence boudn function
+def uct_value(wi, ni, t,c=C):
+    '''
+    Upper confidence boudn function
 
-        Parameters
-        ----------
-        wi: number of wins of the ith move
-        ni: number of simulations of the ith move
-        t: number of simulations from the parent node
-        c: exploration parameter   
+    Parameters
+    ----------
+    wi: number of wins of the ith move
+    ni: number of simulations of the ith move
+    t: number of simulations from the parent node
+    c: exploration parameter   
 
-        Return
-        ----------
-        return the node with the highest UCT value.
-        '''
-        return wi/ni + c*math.sqrt(math.log(t)/ni)
+    Return
+    ----------
+    return the node with the highest UCT value.
+    '''
+    return wi/ni + c*math.sqrt(math.log(t)/ni)
 
 
 
@@ -138,10 +141,10 @@ class Node:
         self.children = list()
 
         # number of visits
-        self.visit_count = 0
+        self.visit_count = 1
 
         # number of wins
-        self.win_score = 0
+        self.win_score = 0.5
 
     def increment_visit(self):
         """
@@ -153,7 +156,7 @@ class Node:
         """
         Update win score of current node
         """
-        if (self.win_score != (-sys.maxint - 1)): #change for actual default we set 
+        if (self.win_score != (-sys.maxsize - 1)): #change for actual default we set 
             self.win_score += score
 
     def expand_node(self): 
@@ -195,7 +198,7 @@ class Node:
         uct_values = np.zeros(number_of_children)
 
         for i in range(number_of_children):
-            uct_values[i] = Node.uct_value(wi=children[i].state.win_score, ni=children[i].state.visit_count, t=parent_visit_count)
+            uct_values[i] = uct_value(wi=children[i].win_score, ni=children[i].visit_count, t=parent_visit_count)
         
         max_index = np.argmax(uct_values)
         return children[max_index]
@@ -214,28 +217,18 @@ class Node:
         # if state is a loss, do not consider it
         if self.state.turn == 0:
             if status == P1_WIN:
-                self.parent.state.win_score = (-sys.maxint -1) # minimal integer value
+                self.parent.state.win_score = (-sys.maxsize -1) # minimal integer value
         else:
             if status == P0_WIN:
-                self.parent.state.win_score = (-sys.maxint -1)
+                self.parent.state.win_score = (-sys.maxsize -1)
 
         # Simulate game with random moves 
         cur_state = self.state
 
         while status == IN_PROGRESS: 
-            # update turn
-            cur_state.toggle_player()
-            # update positions
-            if cur_state.turn == 0:
-                my_pos = cur_state.p0_pos
-                adv_pos = cur_state.p1_pos
-            else: 
-                my_pos = cur_state.p1_pos
-                adv_pos = cur_state.p0_pos
-
-            cur_state = cur_state.random_play()
-            status = cur_state.check_board_status()
-
+          cur_state = cur_state.random_play()
+  
+          status = cur_state.check_board_status()
         return status
 
     def back_propagation(self, playout_result):
@@ -251,9 +244,9 @@ class Node:
             node.increment_visit()
 
             if (playout_result == node.state.turn):
-                node.state.add_score(WIN_SCORE) 
+                node.add_score(WIN_SCORE) 
             elif (playout_result == DRAW):
-                node.state.add_score(WIN_SCORE/2) 
+                node.add_score(WIN_SCORE/2) 
 
             node = node.parent
 
@@ -269,7 +262,7 @@ class Node:
         scores= np.zeros(number_of_children)
 
         for i in range(number_of_children):
-            scores[i] = (self.children[i].state.win_score)/(self.children[i].state.visit_count)
+            scores[i] = (self.children[i].win_score)/(self.children[i].visit_count)
 
         max_index =  np.argmax(scores)
         return self.children[max_index]
@@ -315,7 +308,29 @@ class State:
         pos: tuple
         barrier_dir: int
         """
+        UP = 0
+        RIGHT = 1
+        DOWN = 2
+        LEFT = 3
+
         self.chess_board[pos[0], pos[1],barrier_dir] = 1
+        if barrier_dir == 0: # up
+          if pos[0] - 1 >= 0:
+            self.chess_board[pos[0]-1, pos[1],DOWN] = 1
+
+        elif barrier_dir == 1: # right
+          if pos[1] + 1 < self.chess_board.shape[1]:
+            self.chess_board[pos[0], pos[1]+1,LEFT] = 1
+
+        elif barrier_dir == 2: # down
+          if pos[0] + 1 < self.chess_board.shape[0]:
+            self.chess_board[pos[0]+1, pos[1],UP] = 1
+
+        elif barrier_dir == 3: # left
+          if pos[1] - 1 >= 0:
+            self.chess_board[pos[0], pos[1]-1,RIGHT] = 1
+        return self
+        
 
     def all_possible_states(self):
         """
@@ -334,16 +349,17 @@ class State:
         visited = {tuple(start_pos)}
         while state_queue:
             cur_pos, cur_step = state_queue.pop(0)
-            r, c = cur_pos
-            if cur_step == self.max_step:
+            
+            if cur_step == MAX_STEP:
                 break
-            for dir, move in enumerate(MOVES):
 
+            for dir, move in enumerate(MOVES):
+                r, c = cur_pos
                 # look for barrier
                 if self.chess_board[r, c, dir]:
                     continue
 
-                next_pos = cur_pos + move
+                next_pos = cur_pos[0] + move[0], cur_pos[1] + move[1]
 
                 # look for adversary or already visited
                 if np.array_equal(next_pos, adv_pos) or tuple(next_pos) in visited:
@@ -358,19 +374,24 @@ class State:
 
                     # Append new state
                     new_state = deepcopy(self)
-                    # Toggle turn
-                    new_state.toggle_player()
+
                     # Move player
-                    if self.turn == 0:
+                    if new_state.turn == 0:
                         new_state.p0_pos = next_pos
                     else:
                         new_state.p1_pos = next_pos
+
                     # Add barrier
                     new_state.set_barrier(next_pos, barrier_dir)
-                    states.append(new_state)
 
+                    # Toggle turn
+                    new_state.toggle_player()
+
+                    states.append(new_state)
                 visited.add(tuple(next_pos))
                 state_queue.append((next_pos, cur_step + 1))
+
+        return states
 
     def check_endgame(self):
         """
@@ -391,7 +412,6 @@ class State:
         for r in range(board_size):
             for c in range(board_size):
                 father[(r, c)] = (r, c)
-
         def find(pos):
             if father[pos] != pos:
                 father[pos] = find(father[pos])
@@ -403,7 +423,7 @@ class State:
         for r in range(board_size):
             for c in range(board_size):
                 for dir, move in enumerate(
-                    self.moves[1:3]
+                    MOVES[1:3]
                 ):  # Only check down and right
                     if self.chess_board[r, c, dir + 1]:
                         continue
@@ -475,42 +495,51 @@ class State:
             adv_pos = self.p0_pos 
 
         ori_pos = deepcopy(my_pos)
-
-        steps = np.random.randint(0, MAX_STEP + 1)
+        moves_inds = list(range(len(MOVES)))
 
         # Random Walk
+        steps = np.random.randint(0, MAX_STEP + 1)
+        valid_move_found = True
+
         for _ in range(steps):
-            r, c = my_pos
-            dir = np.random.randint(0, 4)
+
+          r, c = my_pos
+          # pick random direction
+          random.shuffle(moves_inds)
+
+          for dir in moves_inds:
             m_r, m_c = MOVES[dir]
-            my_pos = (r + m_r, c + m_c)
+            new_pos = (r + m_r, c + m_c)
+            if self.chess_board[r, c, dir] or new_pos == adv_pos:
+              valid_move_found = False
+            else:
+              valid_move_found = True
+              my_pos = new_pos
+              break
 
-            k = 0
-            while self.chess_board[r, c, dir] or my_pos == adv_pos:
-                k += 1
-                if k > 300:
-                    break
-                dir = np.random.randint(0, 4)
-                m_r, m_c = MOVES[dir]
-                my_pos = (r + m_r, c + m_c)
+          if not valid_move_found:
+            break
 
-            if k > 300: # enclosed by adversary
-                my_pos = ori_pos
-                break
-
-        # Put Barrier
-        dir = np.random.randint(0, 4)
+        random.shuffle(moves_inds)
+        valid_move_found = False
         r, c = my_pos
-        while self.chess_board[r, c, dir]:
-            dir = np.random.randint(0, 4)
-        
-        # Apply changes to game state
+        for dir in moves_inds:
+          if self.chess_board[r, c, dir] == 0:
+            valid_move_found = True
+            self.set_barrier(my_pos, dir)
+            break
+
+        if not valid_move_found:
+          print("ERROR: CANT MOVE")
+          sys.exit(-2)
+
+        # Update state position
         if self.turn == 0:
             self.p0_pos = my_pos
         else:
             self.p1_pos = my_pos
-        
-        self.chess_board[my_pos[0], my_pos[1], dir] = 1
+
+        self.toggle_player()
 
         return self
 
