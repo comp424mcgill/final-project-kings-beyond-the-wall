@@ -29,7 +29,7 @@ DRAW = 2
 IN_PROGRESS = 3
 WIN_SCORE = 1
 
-MAX_SIMULATION_TIME = 30
+MAX_SIMULATION_TIME = 29.5
 
 @register_agent("student_agent")
 class StudentAgent(Agent):
@@ -66,7 +66,6 @@ class StudentAgent(Agent):
         cur_state = State(chess_board, p0_pos, p1_pos, turn) # initial state
 
         next_move = self.find_next_move(cur_state)
-        print(next_move)
         return next_move
 
     
