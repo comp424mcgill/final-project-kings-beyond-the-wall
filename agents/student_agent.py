@@ -8,7 +8,7 @@ import numpy as np
 import time
 import random
 
-dir_map = {
+DIR_MAP = {
     "u": 0,
     "r": 1,
     "d": 2,
@@ -16,7 +16,9 @@ dir_map = {
 }
 
 # Moves (Up, Right, Down, Left)
-moves = ((-1, 0), (0, 1), (1, 0), (0, -1))
+MOVES = ((-1, 0), (0, 1), (1, 0), (0, -1))
+
+MAX_STEP = 3
 
 C = math.sqrt(2)
 
@@ -25,6 +27,8 @@ P1_WIN = 1
 DRAW = 2
 IN_PROGRESS = 3
 WIN_SCORE = 1
+
+MAX_SIMULATION_TIME = 30
 
 @register_agent("student_agent")
 class StudentAgent(Agent):
@@ -53,58 +57,78 @@ class StudentAgent(Agent):
 
         Please check the sample implementation in agents/random_agent.py or agents/human_agent.py for more details.
         """
-        # dummy return
-        return my_pos, self.dir_map["u"]
+        MAX_STEP = max_step
+
+        p0_pos, p1_pos = my_pos, adv_pos # assume current player is p0 and opponent is p1
+        turn = 0
+
+        cur_state = State(chess_board, p0_pos, p1_pos, turn) # initial state
+
+        return self.find_next_move(cur_state)
 
     
     # ------------------------- MCTS -------------------------
 
-    # Call mcts search from current game state.
-    # Keep track of time with a while loop to set an upper bound on the 
-    # simulation execution time.
-    def find_next_move(self, chess_board, state, turn):
-        # TODO
-        tree = Tree(state)
-        root_node = tree.root
-        root_node.state.chess_board = chess_board
-        root_node.state.turn = turn
-        start_time = time.time()
 
-        while ((time.time() - start_time) < 29) {
-            promising_node = select_promising_node(root_node)
-            if (!(check_endgame(self)[0])) {
-                expand(promising_node); 
-            }
-            new_node = promising_node;
-            if (len(promising_node.children) > 0) {
-                new_node = promising_node.get_random_child_node()
-            }
-            playout_result = simulate_random_playout(new_node)
-            back_propagation(new_node, playout_result)
-        }
-        winner_node = root_node.get_child_with_max_score()
-        return winner_node.state
+    def find_next_move(self, state):
+        '''
+        Call MCTS from current game state. Simulate until maximum time 
+        is reached.
 
-    # Upper confidence bound function
-    # wi: number of wins after the ith move
-    # ni: number of simulations after the ith move
-    # t: total number of simulations for the parent node
-    # c: exploration parameter
-    def uct_value(wi, ni, t,c=C):
-        return wi/ni + c*math.sqrt(math.log(t)/ni)
-
-
-    def board_status(state):
-        """
-        Return the current board status.
-        
         Parameters
         ----------
-        state: the game state
-        """
-        #TODO
-        #should we evaluate whether the game is lost or won?
-        return
+        state: the current state of the game before the move
+
+        Return
+        ----------
+        return a tuple ((x,y), dir) where (x,y) is the next position of your agent 
+        and dir is the direction where to put the wall.
+        '''
+        mcts = MCTS(state)
+        root_node = mcts.root
+        start_time = time.time()
+
+        while ((time.time() - start_time) < MAX_SIMULATION_TIME):
+
+            promising_node = root_node.select_promising_node() # select promising child node based on UCT
+
+            if (promising_node.state.check_board_status() != IN_PROGRESS):
+                promising_node.expand_node() # create child node for selected promising node
+            
+            node_to_explore = promising_node
+            if (promising_node.children):
+                node_to_explore = promising_node.get_random_child_node()
+            
+            playout_result = node_to_explore.simulate_random_playout()
+
+            node_to_explore.back_propagation(playout_result)
+        
+        winner_node = root_node.get_child_with_max_score()
+
+        diff = np.where(winner_node.state.chess_board - root_node.state.chessboard)
+        
+        next_move = diff[0][0], diff[1][0]
+        dir = diff[2][0]
+
+        return next_move, dir
+
+    def uct_value(wi, ni, t,c=C):
+        '''
+        Upper confidence boudn function
+
+        Parameters
+        ----------
+        wi: number of wins of the ith move
+        ni: number of simulations of the ith move
+        t: number of simulations from the parent node
+        c: exploration parameter   
+
+        Return
+        ----------
+        return the node with the highest UCT value.
+        '''
+        return wi/ni + c*math.sqrt(math.log(t)/ni)
+
 
 
 class Node:
@@ -119,109 +143,162 @@ class Node:
         # number of wins
         self.win_score = 0
 
-    def expand(self): #idk if this should be a method in the agent and we pass it a node?
+    def increment_visit(self):
         """
-        Expand the node by finding all its possible states.
-        
-        Parameters
-        ----------
-        node: the node to expand
+        Increment number of visits to current node.
         """
-        states = self.state.all_possible_states()
-        for s in states:
-            self.children.append(Node(s, parent=self))
+        self.visit_count += 1
 
-    # Select most promising node 
-    def select_promising_node(node): #should this be in the agent as well? passing root node
+    def add_score(self, score):
+        """
+        Update win score of current node
+        """
+        if (self.win_score != (-sys.maxint - 1)): #change for actual default we set 
+            self.win_score += score
+
+    def expand_node(self): 
+        """
+        Expand the node by finding all its possible states and creating
+        a child node for each state.
+        """
+        children_states = self.state.all_possible_states()
+        for s in children_states:
+            self.children.append(Node(s, parent=self)) # create new node
+        return self
+
+    def select_promising_node(self): 
+        """
+        Go down the tree by selecting child node with best UCT value 
+        at each level.
+
+        Return
+        ----------
+        return the most promising child node
+        """
+        node = self
         #iterate down the node and find the best uct 
-        while (len(node.children != 0)):
-            node = find_node_best_uct(node)
+        while node.children:
+            node = node.find_node_best_uct()
         return node
     
-    # Select child node with best uct value
-    def find_node_best_uct(node): #should this be static and passing a node
-        #TODO
-        parent_visit = node.state.visit_count
-        children_length = len(node.children)
-        children = node.children
-        uct_values = []
-        for i in range(children_length):
-            uct_values.append(uct_value(parent_visit, children[i].state.win_score, children[i].state.visit_count))
-        max_uct_value_index = np.argmax(uct_values)
-        return children[i]
+    def find_node_best_uct(self): 
+        """
+        Select child node with best UCT value
+
+        Return
+        ----------
+        return the chosen node.
+        """
+        parent_visit_count = self.visit_count
+        children = self.children
+        number_of_children = len(children)
+        uct_values = np.zeros(number_of_children)
+
+        for i in range(number_of_children):
+            uct_values[i] = Node.uct_value(wi=children[i].state.win_score, ni=children[i].state.visit_count, t=parent_visit_count)
+        
+        max_index = np.argmax(uct_values)
+        return children[max_index]
     
-    def check_board_status(state):
-        is_endgame, p0, p1 = state.check_endgame()
-        if (is_endgame):
-            if (p0 > p1):
-                return P0_WIN
-            elif (p1 > p0):
-                return P1_WIN
-            else:
-                return DRAW
-        else:
-            return IN_PROGRESS
 
-    # Simulate random playouts from a node and return the board status
-    def simulate_random_playout(node):
-        # TODO
-        state = node.state
-        board_status = check_board_status(state)
-        if (state.turn = 0):
-            if (board_status == P1_WIN):
-                node.parent.state.win_score = -sys.maxint -1
+    def simulate_random_playout(self):
+        """
+        Simulate a random full game playout from current node.
+
+        Return
+        ----------
+        return the playout result status.possible values: P0_WIN, P1_WIN, DRAW
+        """
+        status = self.state.check_board_status()
+
+        # if state is a loss, do not consider it
+        if self.state.turn == 0:
+            if status == P1_WIN:
+                self.parent.state.win_score = (-sys.maxint -1) # minimal integer value
         else:
-            if (board_status == P0_WIN):
-                node.parent.state.win_score = -sys.maxint -1
-        while (board_status == IN_PROGRESS): 
-            state.toggle_player()
-            if (state.turn = 0):
-                my_pos = state.p0_pos
-                adv_pos = state.p1_pos
+            if status == P0_WIN:
+                self.parent.state.win_score = (-sys.maxint -1)
+
+        # Simulate game with random moves 
+        cur_state = self.state
+
+        while status == IN_PROGRESS: 
+            # update turn
+            cur_state.toggle_player()
+            # update positions
+            if cur_state.turn == 0:
+                my_pos = cur_state.p0_pos
+                adv_pos = cur_state.p1_pos
             else: 
-                my_pos = state.p1_pos
-                adv_pos = state.p0_pos
-            state.random_walk(my_pos, adv_pos)
-            board_status = check_board_status(state)
-        return board_status
+                my_pos = cur_state.p1_pos
+                adv_pos = cur_state.p0_pos
 
-    # Backpropagate simulation results
+            cur_state = cur_state.random_play()
+            status = cur_state.check_board_status()
+
+        return status
+
     def back_propagation(self, playout_result):
-        # TODO
+        """
+        Bapropagate the playout result from current node to root node. 
+
+        Parameters
+        ----------  
+        - playout_result: the playout result. possible values: P0_WIN, P1_WIN, DRAW     
+        """
         node = self
         while (node is not None):
-            node.state.increment_visit()
-            if (node.state.turn == playout_result):
-                node.state.add_score(WIN_SCORE) #add draw after maybe
+            node.increment_visit()
+
+            if (playout_result == node.state.turn):
+                node.state.add_score(WIN_SCORE) 
+            elif (playout_result == DRAW):
+                node.state.add_score(WIN_SCORE/2) 
+
             node = node.parent
 
-    # Get the child node with the highest score which corresponds to the child with highest visit count
-    def get_child_with_max_score():
-        children_scores= list()
-        length = len(self.children)
-        for i in range(length)
-            children_scores.append(self.children[i].state.win_score/self.children[i].state.visit_count)
-        return max(children_scores)
+    def get_child_with_max_score(self):
+        """
+        Select child with max score from current node.
 
-    # Get a random node from the list of possible moves
-    def get_random_child_node():
-        int moves = len(self.children)-1
-        int random_index = random.randint(0,moves)
+        Return
+        ----------
+        return the child with max score
+        """
+        number_of_children = len(self.children)
+        scores= np.zeros(number_of_children)
+
+        for i in range(number_of_children):
+            scores[i] = (self.children[i].state.win_score)/(self.children[i].state.visit_count)
+
+        max_index =  np.argmax(scores)
+        return self.children[max_index]
+
+
+    def get_random_child_node(self):
+        """
+        Select a random child node from current node
+
+        Return
+        ----------
+        return the most promising child node
+        """
+        number_of_children = len(self.children)
+        random_index = random.randint(0,number_of_children-1)
         return self.children[random_index]
 
-class Tree:
-    def __init__(self, state):
-        self.root = Node(state)
+
+class MCTS:
+    def __init__(self, initial_state):
+        self.root = Node(initial_state)
+
 
 class State:
-    def __init__(self, chess_board, p0_pos, p1_pos, turn, max_step, visit_count, win_score):
+    def __init__(self, chess_board, p0_pos, p1_pos, turn):
         self.chess_board = chess_board.copy()
         self.p0_pos = p0_pos
         self.p1_pos = p1_pos
         self.turn = turn # player number 0 or 1
-        self.max_step = max_step
-        self.visit_count = visit_count
-        self.win_score = win_score
 
     def toggle_player(self):
         """
@@ -260,7 +337,7 @@ class State:
             r, c = cur_pos
             if cur_step == self.max_step:
                 break
-            for dir, move in enumerate(moves):
+            for dir, move in enumerate(MOVES):
 
                 # look for barrier
                 if self.chess_board[r, c, dir]:
@@ -275,7 +352,7 @@ class State:
                 # Endpoint already has barrier or is boarder
                 r, c = next_pos
 
-                for barrier_dir in dir_map.values():
+                for barrier_dir in DIR_MAP.values():
                     if self.chess_board[r, c, barrier_dir]:
                         continue
 
@@ -356,52 +433,68 @@ class State:
             player_win = -1  # Tie
         return True, p0_score, p1_score
 
-    def random_play(self):
+    def check_board_status(self):
         """
-        Play a random move among list of possible moves on the board.
-        Update state accordingly.
-        """
-        # TODO
-        pass
-    
-    def increment_visit():
-        self.visit_count += 1
-
-    def add_score(score)
-        if (self.win_score != (-sys.maxint - 1)): #change for actual default we set 
-            this.win_score += score;
-
-    def random_walk(self, my_pos, adv_pos):
-        """
-        Randomly walk to the next position in the board.
-
+        Return the current board status.
+        
         Parameters
         ----------
-        my_pos : tuple
-            The position of the agent.
-        adv_pos : tuple
-            The position of the adversary.
+        state: the game state
+
+        Return
+        ----------
+        return the board state code. Possible values: IN_PROGRESS, P0_WIN, P1_WIN, DRAW
         """
+        is_endgame, p0, p1 = self.check_endgame()
+        if (is_endgame):
+            if (p0 > p1):
+                return P0_WIN
+            elif (p1 > p0):
+                return P1_WIN
+            else:
+                return DRAW
+        else:
+            return IN_PROGRESS
+
+
+    def random_play(self):
+        """
+        Current player turn performs a random move and game state is updated
+        accordingly.
+
+        Return
+        ----------
+        return the updated game state.
+        """
+
+        if self.turn == 0:
+            my_pos = self.p0_pos
+            adv_pos = self.p1_pos
+        else:
+            my_pos = self.p1_pos
+            adv_pos = self.p0_pos 
+
         ori_pos = deepcopy(my_pos)
-        steps = np.random.randint(0, self.max_step + 1)
+
+        steps = np.random.randint(0, MAX_STEP + 1)
+
         # Random Walk
         for _ in range(steps):
             r, c = my_pos
             dir = np.random.randint(0, 4)
-            m_r, m_c = self.moves[dir]
+            m_r, m_c = MOVES[dir]
             my_pos = (r + m_r, c + m_c)
 
-            # Special Case enclosed by Adversary
             k = 0
             while self.chess_board[r, c, dir] or my_pos == adv_pos:
                 k += 1
                 if k > 300:
                     break
                 dir = np.random.randint(0, 4)
-                m_r, m_c = self.moves[dir]
+                m_r, m_c = MOVES[dir]
                 my_pos = (r + m_r, c + m_c)
 
-            if k > 300:
+            if k > 300: # enclosed by adversary
                 my_pos = ori_pos
                 break
 
@@ -410,8 +503,16 @@ class State:
         r, c = my_pos
         while self.chess_board[r, c, dir]:
             dir = np.random.randint(0, 4)
+        
+        # Apply changes to game state
+        if self.turn == 0:
+            self.p0_pos = my_pos
+        else:
+            self.p1_pos = my_pos
+        
+        self.chess_board[my_pos[0], my_pos[1], dir] = 1
 
-        return my_pos, dir
+        return self
 
 
 
