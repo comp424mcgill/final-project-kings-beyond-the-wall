@@ -20,6 +20,12 @@ moves = ((-1, 0), (0, 1), (1, 0), (0, -1))
 
 C = math.sqrt(2)
 
+P0_WIN = 0
+P1_WIN = 1
+DRAW = 2
+IN_PROGRESS = 3
+WIN_SCORE = 1
+
 @register_agent("student_agent")
 class StudentAgent(Agent):
     """
@@ -64,23 +70,20 @@ class StudentAgent(Agent):
         root_node.state.turn = turn
         start_time = time.time()
 
-        while (time.time() - start_time < 30) {
-            promising_node = select_promising_node(root_node);
-            if (promising_node.state.chess_board.board_status == Board.IN_PROGRESS) { #update the rhs
-                expand(promising_node);
+        while ((time.time() - start_time) < 29) {
+            promising_node = select_promising_node(root_node)
+            if (!(check_endgame(self)[0])) {
+                expand(promising_node); 
             }
             new_node = promising_node;
             if (len(promising_node.children) > 0) {
-                new_node = promising_node.get_random_child_node();
+                new_node = promising_node.get_random_child_node()
             }
-            playout_result = random_play(new_node);
-            back_propagation(new_node, playout_result);
+            playout_result = simulate_random_playout(new_node)
+            back_propagation(new_node, playout_result)
         }
-
         winner_node = root_node.get_child_with_max_score()
-        tree.root_node = winner_node
-        return winner_node.state.chess_board
-
+        return winner_node.state
 
     # Upper confidence bound function
     # wi: number of wins after the ith move
@@ -129,56 +132,76 @@ class Node:
             self.children.append(Node(s, parent=self))
 
     # Select most promising node 
-    def select_promising_node(self): #should this be in the agent as well? passing root node
-        while (len(self.children != 0)):
-            return find_node_best_uct()
+    def select_promising_node(node): #should this be in the agent as well? passing root node
+        #iterate down the node and find the best uct 
+        while (len(node.children != 0)):
+            node = find_node_best_uct(node)
+        return node
     
     # Select child node with best uct value
-    def find_node_best_uct(self): #should this be static and passing a node
+    def find_node_best_uct(node): #should this be static and passing a node
         #TODO
-        parent_visit = self.state.visit_count
-        children_length = len(self.children)
-        children = self.children
+        parent_visit = node.state.visit_count
+        children_length = len(node.children)
+        children = node.children
         uct_values = []
         for i in range(children_length):
             uct_values.append(uct_value(parent_visit, children[i].state.win_score, children[i].state.visit_count))
         max_uct_value_index = np.argmax(uct_values)
         return children[i]
+    
+    def check_board_status(state):
+        is_endgame, p0, p1 = state.check_endgame()
+        if (is_endgame):
+            if (p0 > p1):
+                return P0_WIN
+            elif (p1 > p0):
+                return P1_WIN
+            else:
+                return DRAW
+        else:
+            return IN_PROGRESS
 
     # Simulate random playouts from a node and return the board status
-    def simulate_random_playout(self):
+    def simulate_random_playout(node):
         # TODO
-        temp_node = Node(node)
-        temp_state = temp_node.state
-        board_status = board_status(temp_state.chess_board)
-        if (board_status == opponent) {
-            temp_node.parent.state.win_score = float('-inf')
-            return board_status;
-        }
-        while (board_status == Board.IN_PROGRESS) {
-            temp_state.toggle_player();
-            temp_state.random_play();
-            board_status = board_status(temp_state.chess_board)
-        }
+        state = node.state
+        board_status = check_board_status(state)
+        if (state.turn = 0):
+            if (board_status == P1_WIN):
+                node.parent.state.win_score = -sys.maxint -1
+        else:
+            if (board_status == P0_WIN):
+                node.parent.state.win_score = -sys.maxint -1
+        while (board_status == IN_PROGRESS): 
+            state.toggle_player()
+            if (state.turn = 0):
+                my_pos = state.p0_pos
+                adv_pos = state.p1_pos
+            else: 
+                my_pos = state.p1_pos
+                adv_pos = state.p0_pos
+            state.random_walk(my_pos, adv_pos)
+            board_status = check_board_status(state)
         return board_status
 
     # Backpropagate simulation results
-    def back_propagation(self, turn):
+    def back_propagation(self, playout_result):
         # TODO
-        temp_node = node_to_explore
-        while (temp_node != null):
-            temp_node.state.increment_visit()
-            if (temp_node.state.turn == turn):
-                temp_node.state.add_score(WIN_SCORE) #ig win score = 1 here?
-        temp_node = temp_node.parent
+        node = self
+        while (node is not None):
+            node.state.increment_visit()
+            if (node.state.turn == playout_result):
+                node.state.add_score(WIN_SCORE) #add draw after maybe
+            node = node.parent
 
     # Get the child node with the highest score which corresponds to the child with highest visit count
     def get_child_with_max_score():
-        children_visit_count = list()
+        children_scores= list()
         length = len(self.children)
         for i in range(length)
-            children_visit_count.append(self.children[i].state.visit_count)
-        return max(children_visit_count)
+            children_scores.append(self.children[i].state.win_score/self.children[i].state.visit_count)
+        return max(children_scores)
 
     # Get a random node from the list of possible moves
     def get_random_child_node():
@@ -342,11 +365,53 @@ class State:
         pass
     
     def increment_visit():
-        self.visit_count++
+        self.visit_count += 1
 
     def add_score(score)
-        if (self.win_score != Integer.MIN_VALUE): #change for actual default we set
+        if (self.win_score != (-sys.maxint - 1)): #change for actual default we set 
             this.win_score += score;
+
+    def random_walk(self, my_pos, adv_pos):
+        """
+        Randomly walk to the next position in the board.
+
+        Parameters
+        ----------
+        my_pos : tuple
+            The position of the agent.
+        adv_pos : tuple
+            The position of the adversary.
+        """
+        ori_pos = deepcopy(my_pos)
+        steps = np.random.randint(0, self.max_step + 1)
+        # Random Walk
+        for _ in range(steps):
+            r, c = my_pos
+            dir = np.random.randint(0, 4)
+            m_r, m_c = self.moves[dir]
+            my_pos = (r + m_r, c + m_c)
+
+            # Special Case enclosed by Adversary
+            k = 0
+            while self.chess_board[r, c, dir] or my_pos == adv_pos:
+                k += 1
+                if k > 300:
+                    break
+                dir = np.random.randint(0, 4)
+                m_r, m_c = self.moves[dir]
+                my_pos = (r + m_r, c + m_c)
+
+            if k > 300:
+                my_pos = ori_pos
+                break
+
+        # Put Barrier
+        dir = np.random.randint(0, 4)
+        r, c = my_pos
+        while self.chess_board[r, c, dir]:
+            dir = np.random.randint(0, 4)
+
+        return my_pos, dir
 
 
 
