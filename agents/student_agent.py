@@ -556,6 +556,41 @@ class State:
         return self
 
 
+MINIMAX_MAX = 0
+MINIMAX_MIN = 1
+
+class MinimaxNode:
+    def __init__(self, state, parent=None):
+        self.state = deepcopy(state)
+        self.parent = parent
+        self.children = list()
+        if state.turn == 0:
+            self.minmax = MINIMAX_MAX
+        else:
+            self.minmax = MINIMAX_MIN
+
+    def minimax(self):
+
+        status = self.state.board_status()
+        if status != IN_PROGRESS: # game ended
+            return status
+
+        children_states = self.state.all_possible_states()
+
+        results = np.zeros(len(children_states))
+
+        for i, child_state in enumerate(children_states):     
+            child_node = MinimaxNode(child_state, parent=self)
+            results[i] = child_node.minimax()
+
+        if self.minmax == MINIMAX_MAX: 
+            return np.argmax(results)
+        elif self.minmax == MINIMAX_MIN:
+            return np.argmin(results)
+
+        
+
+
 
 
 
