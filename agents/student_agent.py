@@ -23,7 +23,8 @@ WIN_SCORE = 1.5
 FIRST__SIMULATION_TIME = 29.5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
-DETECT_TRAPS = False # whether or not check for moves that lead to 3-walls traps
+DETECT_TRAPS = False # whether or not check for moves that lead to 3-walls traps\
+VERBOSE = False
 
 # Status Codes
 P0_WIN = 0
@@ -301,7 +302,8 @@ class MCTS:
         diff = np.bitwise_xor(old,new)
         dir = np.argmax(diff)
 
-        print("Number of simulations per second: {x:.06f}".format(x=count/(time.time()-start_time)))
+        if VERBOSE:
+            print("Number of simulations per second: {x:.06f}".format(x=count/(time.time()-start_time)))
         self.root = winner_node
         gc.collect()
         return next_move, dir
