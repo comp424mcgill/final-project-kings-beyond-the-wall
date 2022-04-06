@@ -9,6 +9,7 @@ import time
 import random
 import gc
 import resource
+import os, psutil
 
 DIR_MAP = {
     "u": 0,
@@ -23,7 +24,7 @@ WIN_SCORE = 1.5
 FIRST__SIMULATION_TIME = 5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
-DETECT_TRAPS = False # whether or not check for moves that lead to 3-walls traps\
+DETECT_TRAPS = True # whether or not check for moves that lead to 3-walls traps\
 VERBOSE = False
 
 # Status Codes
@@ -84,6 +85,8 @@ class StudentAgent(Agent):
         next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_simulation_time=max_simulation_time)
 
         self.round += 1
+        #print(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
         return next_move, dir
 
 class Node:
