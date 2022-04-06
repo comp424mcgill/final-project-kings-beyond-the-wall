@@ -21,8 +21,9 @@ DIR_MAP = {
 # Params
 C = math.sqrt(2)
 WIN_SCORE = 1.2
-FIRST__SIMULATION_TIME = 29
+FIRST__SIMULATION_TIME = 5
 SIMULATION_TIME = 1.9
+MIN_SCORE = float('-inf')
 
 
 # Status Codes
@@ -134,17 +135,23 @@ class Node:
         """
         Update win score of current node
         """
-        if (self.win_score != (-sys.maxsize - 1)): #change for actual default we set 
+        if (self.win_score != MIN_SCORE): 
             self.win_score += score
 
     def expand_node(self): 
         """
         Expand the node by finding all its possible states and creating
         a child node for each state.
+
+        Return
+        ------
+        return the expanded node
         """
-        children_states = self.state.all_possible_states()
-        for s in children_states:
-            self.children.append(Node(s, parent=self)) # create new node
+        possible_moves = self.state.all_possible_moves()
+
+        for move in possible_moves:
+            new_state = self.state.apply_move(move)
+            self.children.append(Node(new_state, parent=self)) # create new node
         return self
 
     def select_promising_node(self): 
@@ -190,33 +197,26 @@ class Node:
         ----------
         return the playout result status.possible values: P0_WIN, P1_WIN, DRAW
         """
-        status = self.state.check_board_status()
+        cur_status = self.state.check_board_status()
 
         # if state is a loss, do not consider it
         if self.state.turn == 0:
-            if status == P1_WIN:
-                self.parent.state.win_score = (-sys.maxsize -1) # minimal integer value
-                return status
+            if cur_status == P1_WIN:
+                self.parent.state.win_score = MIN_SCORE # minimal integer value
+                return cur_status
         else:
-            if status == P0_WIN:
-                self.parent.state.win_score = (-sys.maxsize -1)
-                return status
-
-        # if self.state.is_trap(n=3):
-        #     self.parent.state.win_score = (-sys.maxsize -1)
-        #     if self.state.turn == 0:
-        #         return P0_TRAP
-        #     else:
-        #         return P1_TRAP
+            if cur_status == P0_WIN:
+                self.parent.state.win_score = MIN_SCORE
+                return cur_status
             
-
         # Simulate game with random moves 
         cur_state = deepcopy(self.state)
+        cur_status = cur_state.check_board_status()
 
-        while status == IN_PROGRESS: 
-          cur_state = cur_state.random_play()
-          status = cur_state.check_board_status()
-        return status
+        while cur_status == IN_PROGRESS: 
+            cur_state = cur_state.random_play()
+            cur_status = cur_state.check_board_status()
+        return cur_status
 
     def back_propagation(self, playout_result):
         """
@@ -398,12 +398,11 @@ class State:
         return self
         
 
-    def all_possible_states(self):
+    def all_possible_moves(self):
         """
-        Get all possible states from current game state. (reachable and within max steps).
+        Get all possible moves of the form ((y,x),dir) from current game state. (reachable and within max steps).
         """
-        states = list()
-
+        moves = list()
         # Get current player start position
         my_pos = self.p0_pos if self.turn == 0 else self.p1_pos
 
@@ -411,10 +410,15 @@ class State:
         adv_pos = self.p0_pos if self.turn == 1 else self.p1_pos
 
         # BFS
-        state_queue = [(my_pos, 0)]
+        for barrier_dir in DIR_MAP.values():
+            if self.chess_board[my_pos[0], my_pos[1], barrier_dir]:
+                continue
+            moves.append((my_pos, barrier_dir))
+
+        move_queue = [(my_pos, 0)]
         visited = {tuple(my_pos)}
-        while state_queue:
-            cur_pos, cur_step = state_queue.pop(0)
+        while move_queue:
+            cur_pos, cur_step = move_queue.pop(0)
             
             if cur_step == self.max_step:
                 break
@@ -437,26 +441,37 @@ class State:
                 for barrier_dir in DIR_MAP.values():
                     if self.chess_board[r, c, barrier_dir]:
                         continue
+                    moves.append((next_pos, barrier_dir))
 
-                    # Append new state
-                    new_state = deepcopy(self)
-
-                    # Move player
-                    if new_state.turn == 0:
-                        new_state.p0_pos = next_pos
-                    else:
-                        new_state.p1_pos = next_pos
-
-                    # Add barrier
-                    new_state.set_barrier(next_pos, barrier_dir)
-
-                    # Toggle turn
-                    new_state.toggle_player()
-
-                    states.append(new_state)
                 visited.add(tuple(next_pos))
-                state_queue.append((next_pos, cur_step + 1))
-        return states
+                move_queue.append((next_pos, cur_step + 1))
+        return moves
+    
+    def apply_move(self, move):
+        """
+        Apply a move to current state and return new state.
+
+        Params
+        ------
+        - move: tuple of the form (pos, dir) where pos is the
+                next position and dir is the barrier direction.
+        """ 
+        pos, dir = move
+        # Append new state
+        new_state = deepcopy(self)
+
+        # Move player
+        if new_state.turn == 0:
+            new_state.p0_pos = pos
+        else:
+            new_state.p1_pos = pos
+
+        # Add barrier
+        new_state.set_barrier(pos, dir)
+
+        # Toggle turn
+        new_state.toggle_player()
+        return new_state
 
     def is_trap(self, n=3):
         """
@@ -521,70 +536,8 @@ class State:
         p1_score = list(father.values()).count(p1_r)
         if p0_r == p1_r:
             return False, p0_score, p1_score
-        player_win = None
-        win_blocks = -1
-        if p0_score > p1_score:
-            player_win = 0
-            win_blocks = p0_score
-        elif p0_score < p1_score:
-            player_win = 1
-            win_blocks = p1_score
-        else:
-            player_win = -1  # Tie
         return True, p0_score, p1_score
-
-
-    def capturable_area(self):
-        """
-            compute capturable available area from my position.
-        """
-        if self.turn == 0:
-            my_pos = self.p0_pos
-            adv_pos = self.p1_pos
-        else:
-            my_pos = self.p1_pos
-            adv_pos = self.p0_pos
-
-        capturable_area = 0
-
-        # BFS
-        pos_queue = [my_pos]
-        visited = {tuple(my_pos)}
-        while pos_queue:
-            cur_pos = pos_queue.pop(0)
-            
-            capturable_area += 1
-
-            for dir, move in enumerate(self.moves):
-                r, c = cur_pos
-                # look for barrier
-                if self.chess_board[r, c, dir]:
-                    continue
-
-                next_pos = cur_pos[0] + move[0], cur_pos[1] + move[1]
-
-                # look for adversary or already visited
-                if next_pos == adv_pos or tuple(next_pos) in visited:
-                    continue
-                
-                pos_queue.append(next_pos)
-                visited.add(tuple(next_pos))
-
-        return capturable_area
-
-    def distance_from_center(self):
-        """
-            compute distance of current player from center
-        """
-        if self.turn == 0:
-            my_pos = self.p0_pos
-        else:
-            my_pos = self.p1_pos
-
-        center = self.chess_board.shape[0]/2.0
-
-        return math.sqrt((center - (my_pos[0]+0.5))**2 + (center - (my_pos[1]+0.5))**2)
-          
+  
 
     def check_board_status(self):
         """
@@ -599,10 +552,10 @@ class State:
         return the board state code. Possible values: IN_PROGRESS, P0_WIN, P1_WIN, DRAW
         """
         is_endgame, p0, p1 = self.check_endgame()
-        if (is_endgame):
-            if (p0 > p1):
+        if is_endgame:
+            if p0 > p1:
                 return P0_WIN
-            elif (p1 > p0):
+            elif p1 > p0:
                 return P1_WIN
             else:
                 return DRAW
@@ -620,57 +573,22 @@ class State:
         return the updated game state.
         """
 
+        moves = self.all_possible_moves()
+
+        if len(moves) == 0:
+            sys.exit(-2)
+            return self
+
+        random_pos, random_dir = random.choice(moves)
+
+        # Update position, turn and barriers
         if self.turn == 0:
-            my_pos = self.p0_pos
-            adv_pos = self.p1_pos
+            self.p0_pos = random_pos
         else:
-            my_pos = self.p1_pos
-            adv_pos = self.p0_pos
-
-
-        ori_pos = deepcopy(my_pos)
-        moves_inds = list(range(len(self.moves)))
-
-        # Random Walk
-        steps = np.random.randint(0, self.max_step+1)
-        valid_move_found = True
-
-        for step in range(steps):
-
-            r, c = my_pos
-            # pick random direction
-            random.shuffle(moves_inds)
-
-            for dir in moves_inds:
-                m_r, m_c = self.moves[dir]
-                new_pos = (r + m_r, c + m_c)
-                if self.chess_board[r, c, dir] or new_pos == adv_pos:
-                    valid_move_found = False
-                else:
-                    valid_move_found = True
-                    my_pos = new_pos
-                    break
-
-            if not valid_move_found:
-                break
-
-        random.shuffle(moves_inds)
-        valid_move_found = False
-        r, c = my_pos
-        for dir in moves_inds:
-            if self.chess_board[r, c, dir] == 0:
-                valid_move_found = True
-                self.set_barrier(my_pos, dir)
-                break
-
-        # Update state position
-        if self.turn == 0:
-            self.p0_pos = my_pos
-        else:
-            self.p1_pos = my_pos
+            self.p1_pos = random_pos
 
         self.toggle_player()
-
+        self.set_barrier(random_pos, random_dir)
         return self
     
     def same_state(self, state):
