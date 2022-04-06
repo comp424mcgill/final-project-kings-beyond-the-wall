@@ -3,7 +3,6 @@ from asyncio import FIRST_COMPLETED
 from agents.agent import Agent
 from store import register_agent
 from copy import deepcopy
-import sys
 import math
 import numpy as np
 import time
@@ -20,11 +19,11 @@ DIR_MAP = {
 
 # Params
 C = math.sqrt(2)
-WIN_SCORE = 1.2
+WIN_SCORE = 1.5
 FIRST__SIMULATION_TIME = 29.5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
-
+DETECT_TRAPS = False # whether or not check for moves that lead to 3-walls traps
 
 # Status Codes
 P0_WIN = 0
@@ -85,28 +84,6 @@ class StudentAgent(Agent):
 
         self.round += 1
         return next_move, dir
-
-    
-    # ------------------------- MCTS -------------------------
-
-
-def uct_value(wi, ni, t,c=C):
-
-    '''
-    Upper confidence boudn function
-
-    Parameters
-    ----------
-    wi: number of wins of the ith move
-    ni: number of simulations of the ith move
-    t: number of simulations from the parent node
-    c: exploration parameter   
-
-    Return
-    ----------
-    return the node with the highest UCT value.
-    '''
-    return wi/ni + c*math.sqrt(math.log(t)/ni)
 
 class Node:
     def __init__(self, state, parent=None):
@@ -183,7 +160,7 @@ class Node:
         uct_values = np.zeros(number_of_children)
 
         for i in range(number_of_children):
-            uct_values[i] = uct_value(wi=children[i].win_score, ni=children[i].visit_count, t=parent_visit_count)
+            uct_values[i] = MCTS.uct_value(wi=children[i].win_score, ni=children[i].visit_count, t=parent_visit_count)
  
         max_index = np.argmax(uct_values)
         return children[max_index]
@@ -353,6 +330,22 @@ class MCTS:
             new_root = Node(state, parent=None)
             self.root = new_root
 
+    def uct_value(wi, ni, t,c=C):
+        '''
+        Upper confidence boudn function
+
+        Parameters
+        ----------
+        wi: number of wins of the ith move
+        ni: number of simulations of the ith move
+        t: number of simulations from the parent node
+        c: exploration parameter   
+
+        Return
+        ----------
+        return the node with the highest UCT value.
+        '''
+        return wi/ni + c*math.sqrt(math.log(t)/ni)
 
 class State:
     def __init__(self, chess_board, p0_pos, p1_pos, turn, max_step):
@@ -371,12 +364,17 @@ class State:
 
     def set_barrier(self, pos, barrier_dir):
         """
-        Set barrier on chessboard.
+        Set barrier on chessboard. Important to set
+        both barriers.
         
         Parameters
         ----------
         pos: tuple
         barrier_dir: int
+
+        Return
+        -------
+        return the updated state
         """
 
         self.chess_board[pos[0], pos[1],barrier_dir] = 1
@@ -401,6 +399,10 @@ class State:
     def all_possible_moves(self):
         """
         Get all possible moves of the form ((y,x),dir) from current game state. (reachable and within max steps).
+
+        Return
+        -------
+        return a list of tuples (pos, dir).
         """
         moves = list()
         # Get current player start position
@@ -455,6 +457,10 @@ class State:
         ------
         - move: tuple of the form (pos, dir) where pos is the
                 next position and dir is the barrier direction.
+        
+        Return
+        -------
+        return the new state created from the move.
         """ 
         pos, dir = move
         # Append new state
@@ -473,20 +479,26 @@ class State:
         new_state.toggle_player()
         return new_state
 
-    def is_trap(self, n=3):
+    def is_trap(self, move):
         """
-        Check whether the position is surrounded by walls
-        """
-        if self.turn == 0:
-            my_pos = self.p0_pos
-        else:
-            my_pos = self.p1_pos
+        Check whether the move would lead to a trap. A trap occurs when
+        the player is surrounded by 3 walls. This 
+        is a position that we tend to avoid.
 
-        count = 0
-        for dir, move in enumerate(self.moves):
-            if self.chess_board[my_pos[0], my_pos[1], dir] == 1:
-                count += 1
-        return count >= n
+        Params
+        ------
+        - move: the move that we want to verify.
+
+        Return
+        ------
+        return True if move leads to a trap, False otherwise.
+        """
+        next_pos, dir = move
+        barriers = self.chess_board[next_pos].copy()
+
+        barriers[dir] = 1
+        count = np.sum(barriers)
+        return count >= 3
 
     def check_endgame(self):
         """
@@ -565,8 +577,8 @@ class State:
 
     def random_play(self):
         """
-        Current player turn performs a random move and game state is updated
-        accordingly.
+        Current player turn performs a valid random move and game state 
+        is updated accordingly.
 
         Return
         ----------
@@ -575,11 +587,14 @@ class State:
 
         moves = self.all_possible_moves()
 
-        if len(moves) == 0:
-            sys.exit(-2)
-            return self
-
-        random_pos, random_dir = random.choice(moves)
+        if DETECT_TRAPS:
+            trap_free_moves = [move for move in moves if not self.is_trap(move)]
+            if trap_free_moves:
+                random_pos, random_dir = random.choice(trap_free_moves)
+            else:
+                random_pos, random_dir = random.choice(moves)
+        else:
+            random_pos, random_dir = random.choice(moves)
 
         # Update position, turn and barriers
         if self.turn == 0:
@@ -592,6 +607,19 @@ class State:
         return self
     
     def same_state(self, state):
+        """
+        Indicates whether or not a state is same as
+        the current state.
+
+        Params
+        ------
+        - state: the state that we want to compare
+
+        Return
+        ------
+        return True if the state is same as the current state,
+        return False otherwise.
+        """
 
         if self.p0_pos != state.p0_pos:
             return False
@@ -602,13 +630,6 @@ class State:
         if not np.array_equal(self.chess_board, state.chess_board):
             return False
         return True
-
-def print_state(state, name):
-    print(name, " --> ","P0: ", state.p0_pos, "P1: ", state.p1_pos, 'TURN: ',state.turn, 'BOARD: ',state.chess_board)
-
-
-
-
 
 
 
