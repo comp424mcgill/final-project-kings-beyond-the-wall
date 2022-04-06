@@ -9,6 +9,7 @@ import time
 import random
 import gc
 import resource
+import sys
 
 DIR_MAP = {
     "u": 0,
@@ -20,19 +21,19 @@ DIR_MAP = {
 # Params
 C = math.sqrt(2)
 WIN_SCORE = 1.5
-FIRST__SIMULATION_TIME = 5
+FIRST__SIMULATION_TIME = 29.5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
-DETECT_TRAPS = False # whether or not check for moves that lead to 3-walls traps\
-VERBOSE = False
+AVOID_TRAPS = True # if set to True --> random play avoids traps
+IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
+VERBOSE = True
 
 # Status Codes
-P0_WIN = 0
-P1_WIN = 1
-DRAW = 2
-IN_PROGRESS = 3
-P0_TRAP = 4
-P1_TRAP = 5
+STATUS_P0_WIN = 0
+STATUS_P1_WIN = 1
+STATUS_DRAW = 2
+STATUS_IN_PROGRESS = 3
+STATUS_NONE = -1
 
 # Direction Codes
 UP = 0
@@ -125,7 +126,7 @@ class Node:
         ------
         return the expanded node
         """
-        possible_moves = self.state.all_possible_moves()
+        possible_moves = self.state.all_possible_moves(flag_traps=AVOID_TRAPS)
 
         for move in possible_moves:
             new_state = self.state.apply_move(move)
@@ -173,28 +174,101 @@ class Node:
 
         Return
         ----------
-        return the playout result status.possible values: P0_WIN, P1_WIN, DRAW
+        return the playout result status.possible values: STATUS_P0_WIN, STATUS_P1_WIN, STATUS_DRAW
         """
-        cur_status = self.state.check_board_status()
+        cur_status = self.state.get_board_status()
 
         # if state is a loss, do not consider it
         if self.state.turn == 0:
-            if cur_status == P1_WIN:
+            if cur_status == STATUS_P1_WIN:
                 self.parent.state.win_score = MIN_SCORE # minimal integer value
                 return cur_status
         else:
-            if cur_status == P0_WIN:
+            if cur_status == STATUS_P0_WIN:
                 self.parent.state.win_score = MIN_SCORE
                 return cur_status
             
         # Simulate game with random moves 
-        cur_state = deepcopy(self.state)
-        cur_status = cur_state.check_board_status()
-
-        while cur_status == IN_PROGRESS: 
-            cur_state = cur_state.random_play()
-            cur_status = cur_state.check_board_status()
+        cur_node = deepcopy(self)
+        while cur_status == STATUS_IN_PROGRESS: 
+            cur_node = cur_node.random_play()
+            cur_status = cur_node.state.get_board_status()
         return cur_status
+
+    def random_play(self):
+        """
+        Current player turn performs a valid random move and game state 
+        is updated accordingly.
+
+        Return
+        ----------
+        return the updated game state.
+        """
+        moves = self.state.all_possible_moves(flag_traps=AVOID_TRAPS)
+
+        if AVOID_TRAPS:
+            # filter out traps
+            trap_free_moves = [move for move in moves if not move[2]]
+            if trap_free_moves:
+                moves = trap_free_moves
+        
+
+        # The improved random play scan all possible moves
+        # to find a winning node.
+        if IMPROVED_RANDOM_PLAY:
+            # shuffle moves
+            inds = list(range(len(moves)))
+            random.shuffle(inds)
+
+            win_moves = list() # list of moves leading to win
+            ok_moves = list() # list of moves that neither lead to win/loss
+            loss_moves = list() # list of moves leading to loss
+
+            # remember previous state information
+            if self.state.turn == 0:
+                prev_turn = 0
+                prev_pos = self.state.p0_pos
+            else:
+                prev_turn = 1
+                prev_pos = self.state.p1_pos
+            prev_is_trap = self.state.trap
+
+            tmp_state = deepcopy(self.state) 
+
+            for ind in inds:
+                random_pos, random_dir, random_is_trap = moves[ind]
+                tmp_state = tmp_state.apply_move((random_pos, random_dir, random_is_trap), create_new_state=False)
+
+                status = tmp_state.get_board_status()
+
+                if status == prev_turn: # found a winning state, stop there
+                    win_moves.append((random_pos, random_dir, random_is_trap))
+                    break
+                else:
+                    if status == (prev_turn + 1) % 2: # opponent's turn
+                        loss_moves.append((random_pos, random_dir, random_is_trap))
+                    else: # non-terminal state
+                        ok_moves.append((random_pos, random_dir, random_is_trap))
+                    # revert move
+                    tmp_state.revert_move((prev_pos,random_dir, prev_is_trap))
+
+            del tmp_state
+            gc.collect()
+
+            if win_moves:
+                random_pos, random_dir, random_is_trap = win_moves[0]
+            elif ok_moves:
+                random_pos, random_dir, random_is_trap = ok_moves[0]
+            else:
+                random_pos, random_dir, random_is_trap = loss_moves[0]
+        
+        # Normal random play
+        else:
+            random_pos, random_dir, random_is_trap = random.choice(moves)
+
+        # Update position, turn and barriers
+        self.state.apply_move((random_pos, random_dir, random_is_trap), create_new_state=False)
+        return self
 
     def back_propagation(self, playout_result):
         """
@@ -202,15 +276,15 @@ class Node:
 
         Parameters
         ----------  
-        - playout_result: the playout result. possible values: P0_WIN, P1_WIN, DRAW     
+        - playout_result: the playout result. possible values: STATUS_P0_WIN, STATUS_P1_WIN, STATUS_DRAW     
         """
         node = self
         while (node is not None):
             node.increment_visit()
 
-            if (playout_result == P0_WIN):
+            if (playout_result == STATUS_P0_WIN):
                 node.add_score(WIN_SCORE) 
-            elif (playout_result == DRAW):
+            elif (playout_result == STATUS_DRAW):
                 node.add_score(WIN_SCORE/4)                
 
             node = node.parent
@@ -241,7 +315,7 @@ class Node:
 
         Return
         ----------
-        return the most promising child node
+        return a random child node
         """
         number_of_children = len(self.children)
         random_index = random.randint(0,number_of_children-1)
@@ -276,7 +350,7 @@ class MCTS:
 
             promising_node = root_node.select_promising_node() # select promising child node based on UCT
 
-            if (promising_node.state.check_board_status() == IN_PROGRESS):
+            if (promising_node.state.get_board_status() == STATUS_IN_PROGRESS):
                 promising_node.expand_node() # create child node for selected promising node
             
             node_to_explore = promising_node
@@ -357,6 +431,7 @@ class State:
         self.turn = turn # player number 0 or 1
         self.max_step = max_step
         self.moves = ((-1, 0), (0, 1), (1, 0), (0, -1))
+        self.trap = False # indicates if trap state or not
 
     def toggle_player(self):
         """
@@ -364,7 +439,8 @@ class State:
         """
         self.turn = (self.turn + 1) % 2
 
-    def set_barrier(self, pos, barrier_dir):
+
+    def set_barrier(self, pos, barrier_dir, value=1):
         """
         Set barrier on chessboard. Important to set
         both barriers.
@@ -373,35 +449,39 @@ class State:
         ----------
         pos: tuple
         barrier_dir: int
+        value: 1 for set, 0 for unset
 
         Return
         -------
         return the updated state
         """
 
-        self.chess_board[pos[0], pos[1],barrier_dir] = 1
-        if barrier_dir == 0: # up
+        self.chess_board[pos[0], pos[1],barrier_dir] = value
+        if barrier_dir == UP: # up
           if pos[0] - 1 >= 0:
-            self.chess_board[pos[0]-1, pos[1],DOWN] = 1
+            self.chess_board[pos[0]-1, pos[1],DOWN] = value
 
-        elif barrier_dir == 1: # right
+        elif barrier_dir == RIGHT: # right
           if pos[1] + 1 < self.chess_board.shape[1]:
-            self.chess_board[pos[0], pos[1]+1,LEFT] = 1
+            self.chess_board[pos[0], pos[1]+1,LEFT] = value
 
-        elif barrier_dir == 2: # down
+        elif barrier_dir == DOWN: # down
           if pos[0] + 1 < self.chess_board.shape[0]:
-            self.chess_board[pos[0]+1, pos[1],UP] = 1
+            self.chess_board[pos[0]+1, pos[1],UP] = value
 
-        elif barrier_dir == 3: # left
+        elif barrier_dir == LEFT: # left
           if pos[1] - 1 >= 0:
-            self.chess_board[pos[0], pos[1]-1,RIGHT] = 1
+            self.chess_board[pos[0], pos[1]-1,RIGHT] = value
         return self
         
 
-    def all_possible_moves(self):
+    def all_possible_moves(self, flag_traps=True):
         """
         Get all possible moves of the form ((y,x),dir) from current game state. (reachable and within max steps).
 
+        Params
+        ------
+        Indicates if moves leading to traps must be flagged
         Return
         -------
         return a list of tuples (pos, dir).
@@ -414,10 +494,17 @@ class State:
         adv_pos = self.p0_pos if self.turn == 1 else self.p1_pos
 
         # BFS
+
         for barrier_dir in DIR_MAP.values():
+
+            # trap detection
+            is_trap = False
+            if flag_traps:
+                is_trap = self.is_trap(my_pos, barrier_dir)
+
             if self.chess_board[my_pos[0], my_pos[1], barrier_dir]:
                 continue
-            moves.append((my_pos, barrier_dir))
+            moves.append((my_pos, barrier_dir, is_trap))
 
         move_queue = [(my_pos, 0)]
         visited = {tuple(my_pos)}
@@ -445,28 +532,38 @@ class State:
                 for barrier_dir in DIR_MAP.values():
                     if self.chess_board[r, c, barrier_dir]:
                         continue
-                    moves.append((next_pos, barrier_dir))
+
+                    # trap detection
+                    is_trap = False
+                    if flag_traps:
+                        is_trap = self.is_trap(next_pos, barrier_dir)
+
+                    moves.append(((next_pos, barrier_dir, is_trap)))
 
                 visited.add(tuple(next_pos))
                 move_queue.append((next_pos, cur_step + 1))
         return moves
     
-    def apply_move(self, move):
+    def apply_move(self, move, create_new_state=True):
         """
         Apply a move to current state and return new state.
 
         Params
         ------
-        - move: tuple of the form (pos, dir) where pos is the
+        - move: tuple of the form (pos, dir, is_trap) where pos is the
                 next position and dir is the barrier direction.
         
         Return
         -------
         return the new state created from the move.
         """ 
-        pos, dir = move
+        pos, dir, is_trap = move
+
         # Append new state
-        new_state = deepcopy(self)
+        if create_new_state:
+            new_state = deepcopy(self)
+        else:
+            new_state = self
 
         # Move player
         if new_state.turn == 0:
@@ -479,9 +576,47 @@ class State:
 
         # Toggle turn
         new_state.toggle_player()
+
+        # Set trap flag
+        new_state.trap = is_trap
+
         return new_state
 
-    def is_trap(self, move):
+    def revert_move(self, move):
+        """
+        Revert a move 
+
+        Params
+        ------
+        - move: tuple of the form (pos, dir, is_trap) where pos is the
+                previous position and dir is the barrier direction
+                 to remove.
+        
+        Return
+        -------
+        return the state
+        """ 
+
+        # Toggle turn
+        self.toggle_player()
+
+        prev_pos, dir, prev_is_trap = move
+
+        # Set Trap Flag
+        self.trap = prev_is_trap
+
+        # Move player
+        if self.turn == 0:
+            self.p0_pos = prev_pos
+        else:
+            self.p1_pos = prev_pos
+
+        # Remove barrier
+        self.set_barrier(prev_pos, dir, value=0)
+
+        return self
+
+    def is_trap(self, next_pos, dir):
         """
         Check whether the move would lead to a trap. A trap occurs when
         the player is surrounded by 3 walls. This 
@@ -489,21 +624,24 @@ class State:
 
         Params
         ------
-        - move: the move that we want to verify.
+        - next_pos: the move position that we want to verify.
+        - dir: the barrier direction that we want to verify
 
         Return
         ------
         return True if move leads to a trap, False otherwise.
         """
-        next_pos, dir = move
-        barriers = self.chess_board[next_pos].copy()
+        barriers = self.chess_board[next_pos]
 
-        barriers[dir] = 1
-        count = np.sum(barriers)
-        return count >= 3
+        count = np.sum(barriers) + 1
+        if count >= 3:
+            return True
+        else:
+            return False
 
     def check_endgame(self):
         """
+        (Method adapated from the check_endgame method from world.py)
         Check if the game ends and compute the current score of the agents.
 
         Returns
@@ -551,9 +689,9 @@ class State:
         if p0_r == p1_r:
             return False, p0_score, p1_score
         return True, p0_score, p1_score
-  
 
-    def check_board_status(self):
+
+    def get_board_status(self):
         """
         Return the current board status.
         
@@ -563,50 +701,20 @@ class State:
 
         Return
         ----------
-        return the board state code. Possible values: IN_PROGRESS, P0_WIN, P1_WIN, DRAW
+        return the board state code. Possible values: STATUS_IN_PROGRESS, STATUS_P0_WIN, STATUS_P1_WIN, DRAW
         """
         is_endgame, p0, p1 = self.check_endgame()
         if is_endgame:
             if p0 > p1:
-                return P0_WIN
+                status = STATUS_P0_WIN
             elif p1 > p0:
-                return P1_WIN
+                status = STATUS_P1_WIN
             else:
-                return DRAW
+                status = STATUS_DRAW
         else:
-            return IN_PROGRESS
+            status = STATUS_IN_PROGRESS
+        return status
 
-
-    def random_play(self):
-        """
-        Current player turn performs a valid random move and game state 
-        is updated accordingly.
-
-        Return
-        ----------
-        return the updated game state.
-        """
-
-        moves = self.all_possible_moves()
-
-        if DETECT_TRAPS:
-            trap_free_moves = [move for move in moves if not self.is_trap(move)]
-            if trap_free_moves:
-                random_pos, random_dir = random.choice(trap_free_moves)
-            else:
-                random_pos, random_dir = random.choice(moves)
-        else:
-            random_pos, random_dir = random.choice(moves)
-
-        # Update position, turn and barriers
-        if self.turn == 0:
-            self.p0_pos = random_pos
-        else:
-            self.p1_pos = random_pos
-
-        self.toggle_player()
-        self.set_barrier(random_pos, random_dir)
-        return self
     
     def same_state(self, state):
         """
@@ -632,6 +740,3 @@ class State:
         if not np.array_equal(self.chess_board, state.chess_board):
             return False
         return True
-
-
-
