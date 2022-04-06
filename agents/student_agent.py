@@ -7,8 +7,8 @@ import math
 import numpy as np
 import time
 import random
-import sys
 import gc
+import resource
 
 DIR_MAP = {
     "u": 0,
@@ -52,6 +52,8 @@ class StudentAgent(Agent):
         self.name = "StudentAgent"
         self.mcts = None
         self.round = 0
+        print(resource.getrlimit(resource.RLIMIT_CORE))
+        resource.setrlimit(resource.RLIMIT_CORE,(500*1024,-1))
 
 
     def step(self, chess_board, my_pos, adv_pos, max_step):
