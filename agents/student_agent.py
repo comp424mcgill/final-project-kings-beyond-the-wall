@@ -21,7 +21,7 @@ DIR_MAP = {
 # Params
 C = math.sqrt(2)
 WIN_SCORE = 1.2
-FIRST__SIMULATION_TIME = 5
+FIRST__SIMULATION_TIME = 29.5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
 
