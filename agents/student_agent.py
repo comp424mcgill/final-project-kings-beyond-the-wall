@@ -1,4 +1,5 @@
 # Student agent: Add your own agent here
+from asyncio import FIRST_COMPLETED
 from agents.agent import Agent
 from store import register_agent
 from copy import deepcopy
@@ -8,6 +9,7 @@ import numpy as np
 import time
 import random
 import sys
+import gc
 
 DIR_MAP = {
     "u": 0,
@@ -16,29 +18,26 @@ DIR_MAP = {
     "l": 3,
 }
 
-
+# Params
 C = math.sqrt(2)
+WIN_SCORE = 1.2
+FIRST__SIMULATION_TIME = 29
+SIMULATION_TIME = 1.9
 
+
+# Status Codes
 P0_WIN = 0
 P1_WIN = 1
 DRAW = 2
 IN_PROGRESS = 3
-WIN_SCORE = 1
+P0_TRAP = 4
+P1_TRAP = 5
 
+# Direction Codes
 UP = 0
 RIGHT = 1
 DOWN = 2
 LEFT = 3
-
-TURN = 0
-
-# MAX_AREA = 8*8
-# RADIUS = 4
-# CAPTURABLE_AREA_A = 0.15/MAX_AREA
-
-# DISTANCE_FROM_CENTER_A = -0.15/RADIUS
-# DISTANCE_FROM_CENTER_B = 0.25
-
 
 @register_agent("student_agent")
 class StudentAgent(Agent):
@@ -48,8 +47,10 @@ class StudentAgent(Agent):
     """
 
     def __init__(self):
-        # super(StudentAgent, self).__init__()
+        super(StudentAgent, self).__init__()
         self.name = "StudentAgent"
+        self.mcts = None
+        self.round = 0
 
 
     def step(self, chess_board, my_pos, adv_pos, max_step):
@@ -67,88 +68,28 @@ class StudentAgent(Agent):
 
         Please check the sample implementation in agents/random_agent.py or agents/human_agent.py for more details.
         """
-        global TURN
-        # global MAX_AREA
-        # global CAPTURABLE_AREA_A
-        # global DISTANCE_FROM_CENTER_A
-        # global RADIUS
-
-        # MAX_AREA = chess_board.shape[0] ** 2
-        # RADIUS = chess_board.shape[0]/2
-
-        if TURN == 0:
-            max_simulation_time = 5
-        else:
-            max_simulation_time = 2
 
         p0_pos, p1_pos = my_pos, adv_pos # assume current player is p0 and opponent is p1
         turn = 0
+        state = State(chess_board=chess_board, p0_pos=p0_pos, p1_pos=p1_pos, turn=turn, max_step=max_step) # initial state
 
-        cur_state = State(chess_board, p0_pos, p1_pos, turn, max_step) # initial state
+        if self.round == 0:
+            max_simulation_time = FIRST__SIMULATION_TIME
+            self.mcts = MCTS(state)
+        else:
+            max_simulation_time = SIMULATION_TIME
+            self.mcts.update_root(state)
 
-        next_move = self.find_next_move(cur_state, max_simulation_time=max_simulation_time)
-        TURN += 1
-        return next_move
+        next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_simulation_time=max_simulation_time)
+
+        self.round += 1
+        return next_move, dir
 
     
     # ------------------------- MCTS -------------------------
 
 
-
-    def find_next_move(self, state, max_simulation_time=2):
-        '''
-        Call MCTS from current game state. Simulate until maximum time 
-        is reached.
-
-        Parameters
-        ----------
-        state: the current state of the game before the move
-
-        Return
-        ----------
-        return a tuple ((x,y), dir) where (x,y) is the next position of your agent 
-        and dir is the direction where to put the wall.
-        '''
-        mcts = MCTS(state)
-        root_node = mcts.root
-        start_time = time.time()
-
-        count = 0
-        while ((time.time() - start_time) < max_simulation_time):
-
-            promising_node = root_node.select_promising_node() # select promising child node based on UCT
-
-            if (promising_node.state.check_board_status() == IN_PROGRESS):
-                promising_node.expand_node() # create child node for selected promising node
-            
-            node_to_explore = promising_node
-            if (len(promising_node.children) != 0):
-                node_to_explore = promising_node.get_random_child_node()
-            
-            playout_result = node_to_explore.simulate_random_playout()
-
-            node_to_explore.back_propagation(playout_result)
-            count += 1
-        
-        winner_node = root_node.get_child_with_max_score()
-        
-        if root_node.state.turn == 0:
-            cur_pos = root_node.state.p0_pos
-            next_move = winner_node.state.p0_pos
-        else:
-            cur_pos = root_node.state.p1_pos
-            next_move = winner_node.state.p1_pos
-
-        old = root_node.state.chess_board[next_move]
-        new = winner_node.state.chess_board[next_move]
-        diff = np.bitwise_xor(old,new)
-        dir = np.argmax(diff)
-
-        # print("Number of simulations per second: {x:.06f}".format(x=count/(time.time()-start_time)))
-        return next_move, dir
-
-# def uct_value(wi, ni, t,c=C, capturable_area=None, distance_from_center=None):
-def uct_value(wi, ni, t,c=C, capturable_area=None, distance_from_center=None):
+def uct_value(wi, ni, t,c=C):
 
     '''
     Upper confidence boudn function
@@ -164,25 +105,7 @@ def uct_value(wi, ni, t,c=C, capturable_area=None, distance_from_center=None):
     ----------
     return the node with the highest UCT value.
     '''
-    # if distance_from_center:
-    #     # print("distance from center:",distance_from_center)
-    #     distance_bonus = DISTANCE_FROM_CENTER_A*distance_from_center+DISTANCE_FROM_CENTER_B
-    # else:
-    #     distance_bonus = 0
-
-    # if capturable_area:
-    #     # print("capturabl area:",capturable_area)
-    #     capturable_bonus = CAPTURABLE_AREA_A * capturable_area
-    # else:
-    #     capturable_bonus = 0
-
-    # print('distance bonus:',distance_bonus)
-    # print("capturable bonus:",capturable_bonus)
-    # return wi/ni + c*math.sqrt(math.log(t)/ni) + capturable_bonus + distance_bonus
     return wi/ni + c*math.sqrt(math.log(t)/ni)
-
-
-
 
 class Node:
     def __init__(self, state, parent=None):
@@ -253,10 +176,6 @@ class Node:
         uct_values = np.zeros(number_of_children)
 
         for i in range(number_of_children):
-            # capturable_area = children[i].state.capturable_area()
-            # distance_from_center = children[i].state.distance_from_center()
-
-            # uct_values[i] = uct_value(wi=children[i].win_score, ni=children[i].visit_count, t=parent_visit_count, capturable_area=capturable_area, distance_from_center=distance_from_center)
             uct_values[i] = uct_value(wi=children[i].win_score, ni=children[i].visit_count, t=parent_visit_count)
  
         max_index = np.argmax(uct_values)
@@ -277,16 +196,25 @@ class Node:
         if self.state.turn == 0:
             if status == P1_WIN:
                 self.parent.state.win_score = (-sys.maxsize -1) # minimal integer value
+                return status
         else:
             if status == P0_WIN:
                 self.parent.state.win_score = (-sys.maxsize -1)
+                return status
+
+        # if self.state.is_trap(n=3):
+        #     self.parent.state.win_score = (-sys.maxsize -1)
+        #     if self.state.turn == 0:
+        #         return P0_TRAP
+        #     else:
+        #         return P1_TRAP
+            
 
         # Simulate game with random moves 
         cur_state = deepcopy(self.state)
 
         while status == IN_PROGRESS: 
           cur_state = cur_state.random_play()
-  
           status = cur_state.check_board_status()
         return status
 
@@ -302,10 +230,10 @@ class Node:
         while (node is not None):
             node.increment_visit()
 
-            if (playout_result == node.state.turn):
+            if (playout_result == (node.state.turn+1)%2):
                 node.add_score(WIN_SCORE) 
             elif (playout_result == DRAW):
-                node.add_score(WIN_SCORE/2) 
+                node.add_score(WIN_SCORE/4)                
 
             node = node.parent
 
@@ -345,6 +273,85 @@ class Node:
 class MCTS:
     def __init__(self, initial_state):
         self.root = Node(initial_state)
+
+    
+    def find_next_move(self, state, max_simulation_time=2):
+        '''
+        Call MCTS from current game state. Simulate until maximum time 
+        is reached.
+
+        Parameters
+        ----------
+        state: the current state of the game before the move
+
+        Return
+        ----------
+        return a tuple ((x,y), dir) where (x,y) is the next position of your agent 
+        and dir is the direction where to put the wall.
+        '''
+
+        start_time = time.time()
+
+        count = 0
+        root_node = self.root
+        while ((time.time() - start_time) < max_simulation_time):
+
+            promising_node = root_node.select_promising_node() # select promising child node based on UCT
+
+            if (promising_node.state.check_board_status() == IN_PROGRESS):
+                promising_node.expand_node() # create child node for selected promising node
+            
+            node_to_explore = promising_node
+            if (len(promising_node.children) != 0):
+                node_to_explore = promising_node.get_random_child_node()
+            
+            playout_result = node_to_explore.simulate_random_playout()
+
+            node_to_explore.back_propagation(playout_result)
+            count += 1
+        
+        winner_node = root_node.get_child_with_max_score()
+        
+        if root_node.state.turn == 0:
+            cur_pos = root_node.state.p0_pos
+            next_move = winner_node.state.p0_pos
+        else:
+            cur_pos = root_node.state.p1_pos
+            next_move = winner_node.state.p1_pos
+
+        old = root_node.state.chess_board[next_move]
+        new = winner_node.state.chess_board[next_move]
+        diff = np.bitwise_xor(old,new)
+        dir = np.argmax(diff)
+
+        print("Number of simulations per second: {x:.06f}".format(x=count/(time.time()-start_time)))
+        self.root = winner_node
+        gc.collect()
+        return next_move, dir
+
+    def update_root(self, state):
+        """
+        Scan the children of the root node to find the next root state.
+
+        Params
+        ------
+        - state: the state we are looking for
+
+        Return
+        ------
+        return the new root node
+        """
+        root_node = self.root
+        children = root_node.children
+        root_updated = False
+        for child in children:
+            if child.state.same_state(state):
+                self.root = child
+                root_updated = True
+                break
+        if not root_updated:
+            new_root = Node(state, parent=None)
+            self.root = new_root
 
 
 class State:
@@ -450,6 +457,21 @@ class State:
                 visited.add(tuple(next_pos))
                 state_queue.append((next_pos, cur_step + 1))
         return states
+
+    def is_trap(self, n=3):
+        """
+        Check whether the position is surrounded by walls
+        """
+        if self.turn == 0:
+            my_pos = self.p0_pos
+        else:
+            my_pos = self.p1_pos
+
+        count = 0
+        for dir, move in enumerate(self.moves):
+            if self.chess_board[my_pos[0], my_pos[1], dir] == 1:
+                count += 1
+        return count >= n
 
     def check_endgame(self):
         """
@@ -598,29 +620,13 @@ class State:
         return the updated game state.
         """
 
-        # When few moves left, use minimax
-        # states = self.all_possible_states()
-
-        # if len(states) != 0 and len(states) <= MINIMAX_THRESHOLD:
-        #     scores = np.zeros(len(states))
-
-        #     for i, state in enumerate(states):
-        #         minimax_node = MinimaxNode(state)
-        #         scores[i] = minimax_node.minimax()
-
-        #     if self.turn == MINIMAX_MAX:
-        #         return states[np.argmax(scores)]
-        #     elif self.turn == MINIMAX_MIN:
-        #         return states[np.argmin(scores)]
-
-        # random play
-        # else:
         if self.turn == 0:
             my_pos = self.p0_pos
             adv_pos = self.p1_pos
         else:
             my_pos = self.p1_pos
-            adv_pos = self.p0_pos 
+            adv_pos = self.p0_pos
+
 
         ori_pos = deepcopy(my_pos)
         moves_inds = list(range(len(self.moves)))
@@ -666,39 +672,23 @@ class State:
         self.toggle_player()
 
         return self
+    
+    def same_state(self, state):
+
+        if self.p0_pos != state.p0_pos:
+            return False
+        if self.p1_pos != state.p1_pos:
+            return False
+        if self.turn != state.turn:
+            return False
+        if not np.array_equal(self.chess_board, state.chess_board):
+            return False
+        return True
+
+def print_state(state, name):
+    print(name, " --> ","P0: ", state.p0_pos, "P1: ", state.p1_pos, 'TURN: ',state.turn, 'BOARD: ',state.chess_board)
 
 
-
-# MINIMAX_MAX = 0
-# MINIMAX_MIN = 1
-
-# MINIMAX_THRESHOLD = -1
-
-# class MinimaxNode:
-#     def __init__(self, state):
-#         self.state = deepcopy(state)
-#         self.children = state.all_possible_states()
-#         if state.turn == 0:
-#             self.minmax = MINIMAX_MAX
-#         else:
-#             self.minmax = MINIMAX_MIN
-
-#     def minimax(self):
-#         if len(self.children) == 0:
-#             return self.state.check_board_status()
-
-#         results = np.zeros(len(self.children))
-
-#         for i, child_state in enumerate(self.children):     
-#             child_node = MinimaxNode(child_state)
-#             results[i] = child_node.minimax()
-
-#         if self.minmax == MINIMAX_MAX: 
-#             return np.max(results)
-#         elif self.minmax == MINIMAX_MIN:
-#             return np.min(results)
-
-        
 
 
 
