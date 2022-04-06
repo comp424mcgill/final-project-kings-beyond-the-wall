@@ -20,7 +20,7 @@ DIR_MAP = {
 # Params
 C = math.sqrt(2)
 WIN_SCORE = 1.5
-FIRST__SIMULATION_TIME = 29.5
+FIRST__SIMULATION_TIME = 5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
 DETECT_TRAPS = False # whether or not check for moves that lead to 3-walls traps\
@@ -52,8 +52,6 @@ class StudentAgent(Agent):
         self.name = "StudentAgent"
         self.mcts = None
         self.round = 0
-        print(resource.getrlimit(resource.RLIMIT_CORE))
-        resource.setrlimit(resource.RLIMIT_CORE,(500*1024,-1))
 
 
     def step(self, chess_board, my_pos, adv_pos, max_step):
@@ -210,7 +208,7 @@ class Node:
         while (node is not None):
             node.increment_visit()
 
-            if (playout_result == (node.state.turn+1)%2):
+            if (playout_result == P0_WIN):
                 node.add_score(WIN_SCORE) 
             elif (playout_result == DRAW):
                 node.add_score(WIN_SCORE/4)                
