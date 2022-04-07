@@ -4,6 +4,7 @@ from utils import all_logging_disabled
 import logging
 from tqdm import tqdm
 import numpy as np
+#import os, psutil
 
 logging.basicConfig(format="%(levelname)s:%(message)s", level=logging.INFO)
 
@@ -140,3 +141,6 @@ if __name__ == "__main__":
         simulator.autoplay()
     else:
         simulator.run()
+        #print(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
+

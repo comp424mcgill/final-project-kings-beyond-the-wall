@@ -8,8 +8,8 @@ import numpy as np
 import time
 import random
 import gc
-import resource
-import sys
+# import resource
+# import os, psutil
 
 DIR_MAP = {
     "u": 0,
@@ -26,7 +26,7 @@ SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
 AVOID_TRAPS = True # if set to True --> random play avoids traps
 IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
-VERBOSE = True
+VERBOSE = False
 
 # Status Codes
 STATUS_P0_WIN = 0
@@ -85,6 +85,8 @@ class StudentAgent(Agent):
         next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_simulation_time=max_simulation_time)
 
         self.round += 1
+        #print(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
         return next_move, dir
 
 class Node:
