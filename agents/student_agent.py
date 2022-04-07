@@ -25,7 +25,7 @@ FIRST__SIMULATION_TIME = 29.5
 SIMULATION_TIME = 1.9
 MIN_SCORE = float('-inf')
 AVOID_TRAPS = True # if set to True --> random play avoids traps
-IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
+# IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
 VERBOSE = False
 
 # Status Codes
@@ -85,6 +85,8 @@ class StudentAgent(Agent):
         next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_simulation_time=max_simulation_time)
 
         self.round += 1
+        
+        # Print RAM memory usage
         #print(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
 
         return next_move, dir
@@ -215,58 +217,60 @@ class Node:
                 moves = trap_free_moves
         
 
-        # The improved random play scan all possible moves
-        # to find a winning node.
-        if IMPROVED_RANDOM_PLAY:
-            # shuffle moves
-            inds = list(range(len(moves)))
-            random.shuffle(inds)
+        # # The improved random play scan all possible moves
+        # # to find a winning node.
+        # if IMPROVED_RANDOM_PLAY:
+        #     # shuffle moves
+        #     inds = list(range(len(moves)))
+        #     random.shuffle(inds)
 
-            win_moves = list() # list of moves leading to win
-            ok_moves = list() # list of moves that neither lead to win/loss
-            loss_moves = list() # list of moves leading to loss
+        #     win_moves = list() # list of moves leading to win
+        #     ok_moves = list() # list of moves that neither lead to win/loss
+        #     loss_moves = list() # list of moves leading to loss
 
-            # remember previous state information
-            if self.state.turn == 0:
-                prev_turn = 0
-                prev_pos = self.state.p0_pos
-            else:
-                prev_turn = 1
-                prev_pos = self.state.p1_pos
-            prev_is_trap = self.state.trap
+        #     # remember previous state information
+        #     if self.state.turn == 0:
+        #         prev_turn = 0
+        #         prev_pos = self.state.p0_pos
+        #     else:
+        #         prev_turn = 1
+        #         prev_pos = self.state.p1_pos
+        #     prev_is_trap = self.state.trap
 
-            tmp_state = deepcopy(self.state) 
+        #     tmp_state = deepcopy(self.state) 
 
-            for ind in inds:
-                random_pos, random_dir, random_is_trap = moves[ind]
-                tmp_state = tmp_state.apply_move((random_pos, random_dir, random_is_trap), create_new_state=False)
+        #     for ind in inds:
+        #         random_pos, random_dir, random_is_trap = moves[ind]
+        #         tmp_state = tmp_state.apply_move((random_pos, random_dir, random_is_trap), create_new_state=False)
 
-                status = tmp_state.get_board_status()
+        #         status = tmp_state.get_board_status()
 
-                if status == prev_turn: # found a winning state, stop there
-                    win_moves.append((random_pos, random_dir, random_is_trap))
-                    break
-                else:
-                    if status == (prev_turn + 1) % 2: # opponent's turn
-                        loss_moves.append((random_pos, random_dir, random_is_trap))
-                    else: # non-terminal state
-                        ok_moves.append((random_pos, random_dir, random_is_trap))
-                    # revert move
-                    tmp_state.revert_move((prev_pos,random_dir, prev_is_trap))
+        #         if status == prev_turn: # found a winning state, stop there
+        #             win_moves.append((random_pos, random_dir, random_is_trap))
+        #             break
+        #         else:
+        #             if status == (prev_turn + 1) % 2: # opponent's turn
+        #                 loss_moves.append((random_pos, random_dir, random_is_trap))
+        #             else: # non-terminal state
+        #                 ok_moves.append((random_pos, random_dir, random_is_trap))
+        #             # revert move
+        #             tmp_state.revert_move((prev_pos,random_dir, prev_is_trap))
 
-            del tmp_state
-            gc.collect()
+        #     del tmp_state
+        #     gc.collect()
 
-            if win_moves:
-                random_pos, random_dir, random_is_trap = win_moves[0]
-            elif ok_moves:
-                random_pos, random_dir, random_is_trap = ok_moves[0]
-            else:
-                random_pos, random_dir, random_is_trap = loss_moves[0]
+        #     if win_moves:
+        #         random_pos, random_dir, random_is_trap = win_moves[0]
+        #     elif ok_moves:
+        #         random_pos, random_dir, random_is_trap = ok_moves[0]
+        #     else:
+        #         random_pos, random_dir, random_is_trap = loss_moves[0]
         
         # Normal random play
-        else:
-            random_pos, random_dir, random_is_trap = random.choice(moves)
+        # else:
+        #     random_pos, random_dir, random_is_trap = random.choice(moves)
+
+        random_pos, random_dir, random_is_trap = random.choice(moves)
 
         # Update position, turn and barriers
         self.state.apply_move((random_pos, random_dir, random_is_trap), create_new_state=False)
