@@ -85,7 +85,7 @@ class StudentAgent(Agent):
         next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_simulation_time=max_simulation_time)
 
         self.round += 1
-        
+
         # Print RAM memory usage
         #print(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
 
@@ -216,6 +216,9 @@ class Node:
             if trap_free_moves:
                 moves = trap_free_moves
         
+        ##############################################
+        # TODO: Fix bug in IMPROVED_RANDOM_PLAY mode #
+        ##############################################
 
         # # The improved random play scan all possible moves
         # # to find a winning node.
