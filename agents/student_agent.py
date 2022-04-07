@@ -53,6 +53,7 @@ class StudentAgent(Agent):
         self.name = "StudentAgent"
         self.mcts = None
         self.round = 0
+        self.autoplay = True
 
 
     def step(self, chess_board, my_pos, adv_pos, max_step):
