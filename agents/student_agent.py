@@ -8,6 +8,7 @@ import numpy as np
 import time
 import random
 import gc
+import sys
 # import resource
 # import os, psutil
 
@@ -18,11 +19,14 @@ DIR_MAP = {
     "l": 3,
 }
 
+# Time Management
+FIRST_ROUND_MAX_TIME = 30
+ROUND_MAX_TIME = 2
+TIME_OVERHEAD = 0.1
+
 # Params
 C = math.sqrt(2)
 WIN_SCORE = 1.5
-FIRST__SIMULATION_TIME = 28
-SIMULATION_TIME = 1.5
 MIN_SCORE = float('-inf')
 AVOID_TRAPS = True # if set to True --> random play avoids traps
 # IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
@@ -71,24 +75,29 @@ class StudentAgent(Agent):
 
         Please check the sample implementation in agents/random_agent.py or agents/human_agent.py for more details.
         """
-
+        self.start_time = time.time()
         p0_pos, p1_pos = my_pos, adv_pos # assume current player is p0 and opponent is p1
         turn = 0
         state = State(chess_board=chess_board, p0_pos=p0_pos, p1_pos=p1_pos, turn=turn, max_step=max_step) # initial state
 
         if self.round == 0:
-            max_simulation_time = FIRST__SIMULATION_TIME
+            max_execution_time = FIRST_ROUND_MAX_TIME
             self.mcts = MCTS(state)
         else:
-            max_simulation_time = SIMULATION_TIME
+            max_execution_time = ROUND_MAX_TIME
             self.mcts.update_root(state)
 
-        next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_simulation_time=max_simulation_time)
+        next_move, dir = self.mcts.find_next_move(self.mcts.root.state, max_execution_time=max_execution_time, start_time=self.start_time)
 
         self.round += 1
 
-        # Print RAM memory usage
-        #print(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+        # Display RAM memory usage
+
+        # print("RAM USAGE: ", psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
+        # Display round execution time      
+        if VERBOSE:   
+            print("ROUND TIME: {x}s".format(x=(time.time() - self.start_time)))
 
         return next_move, dir
 
@@ -335,9 +344,10 @@ class Node:
 class MCTS:
     def __init__(self, initial_state):
         self.root = Node(initial_state)
+        self.max_simulation_time = 0
 
     
-    def find_next_move(self, state, max_simulation_time=2):
+    def find_next_move(self, state, max_execution_time=2, start_time=0):
         '''
         Call MCTS from current game state. Simulate until maximum time 
         is reached.
@@ -352,12 +362,11 @@ class MCTS:
         and dir is the direction where to put the wall.
         '''
 
-        start_time = time.time()
-
         count = 0
         root_node = self.root
-        while ((time.time() - start_time) < max_simulation_time):
+        while ((time.time() - start_time) < (max_execution_time - self.max_simulation_time - TIME_OVERHEAD)):
 
+            simulation_start_time = time.time() # keep track of time elapsed for each simulation
             promising_node = root_node.select_promising_node() # select promising child node based on UCT
 
             if (promising_node.state.get_board_status() == STATUS_IN_PROGRESS):
@@ -371,7 +380,12 @@ class MCTS:
 
             node_to_explore.back_propagation(playout_result)
             count += 1
-        
+
+            # update simulation time
+            simulation_time = time.time() - simulation_start_time
+            if (simulation_time > self.max_simulation_time):
+                self.max_simulation_time = simulation_time
+
         winner_node = root_node.get_child_with_max_score()
         
         if root_node.state.turn == 0:
