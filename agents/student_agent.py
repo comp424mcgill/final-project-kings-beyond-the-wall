@@ -21,8 +21,8 @@ DIR_MAP = {
 # Params
 C = math.sqrt(2)
 WIN_SCORE = 1.5
-FIRST__SIMULATION_TIME = 29.5
-SIMULATION_TIME = 1.9
+FIRST__SIMULATION_TIME = 28
+SIMULATION_TIME = 1.5
 MIN_SCORE = float('-inf')
 AVOID_TRAPS = True # if set to True --> random play avoids traps
 # IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
