@@ -22,7 +22,7 @@ DIR_MAP = {
 # Time Management
 FIRST_ROUND_MAX_TIME = 30
 ROUND_MAX_TIME = 2
-TIME_OVERHEAD = 0.1
+TIME_OVERHEAD = 0.12
 
 # Params
 C = math.sqrt(2)
@@ -30,7 +30,7 @@ WIN_SCORE = 1.5
 MIN_SCORE = float('-inf')
 AVOID_TRAPS = True # if set to True --> random play avoids traps
 # IMPROVED_RANDOM_PLAY = False # if set to True, random play avoid losing moves
-VERBOSE = False
+VERBOSE = True
 
 # Status Codes
 STATUS_P0_WIN = 0
